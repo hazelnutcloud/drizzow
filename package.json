@@ -1,0 +1,14 @@
+{
+  "name": "drizzle-uow",
+  "module": "./src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.2"
+  }
+}
