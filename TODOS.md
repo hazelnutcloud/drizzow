@@ -1,0 +1,2 @@
+- [ ] Handle nested objects change detection correctly. This can happen for two scenarios: a relation to another table or a json column
+- [ ] Implement checkpoints properly
