@@ -17,7 +17,7 @@ describe("Proxy Manager", () => {
     const testDb = new TestDatabase();
 
     identityMap = new IdentityMap();
-    changeTracker = new ChangeTracker(identityMap, new TestDatabase().getAdapter());
+    changeTracker = new ChangeTracker(new TestDatabase().getAdapter());
     proxyManager = new ProxyManager(
       changeTracker,
       identityMap,

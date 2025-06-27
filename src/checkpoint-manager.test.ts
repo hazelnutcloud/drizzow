@@ -12,7 +12,7 @@ describe("Checkpoint Manager", () => {
 
   beforeEach(() => {
     identityMap = new IdentityMap();
-    changeTracker = new ChangeTracker(identityMap, new TestDatabase().getAdapter());
+    changeTracker = new ChangeTracker(new TestDatabase().getAdapter());
     checkpointManager = new CheckpointManager(changeTracker, identityMap);
   });
 
@@ -64,7 +64,7 @@ describe("Checkpoint Manager", () => {
 
     // Make changes after checkpoint
     testUser.username = "modified";
-    changeTracker.markModified(testUser, "username", "alice", "modified");
+    changeTracker.markModified(testUser, "username", "alice");
 
     const result = checkpointManager.rollback(checkpoint);
 

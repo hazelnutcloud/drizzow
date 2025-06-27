@@ -1,4 +1,4 @@
-import type { Checkpoint, RollbackResult } from "./types";
+import type { Checkpoint, RollbackResult, TrackedEntity } from "./types";
 import { ChangeTracker } from "./change-tracker";
 import { IdentityMap } from "./identity-map";
 
@@ -10,6 +10,8 @@ export class CheckpointManager {
   private currentCheckpointId: number = 0;
   private changeTracker: ChangeTracker;
   private identityMap: IdentityMap;
+  private lastPersistedCheckpointId: number | null = null;
+  private lastRevertedCheckpointId: number | null = null;
 
   constructor(changeTracker: ChangeTracker, identityMap: IdentityMap) {
     this.changeTracker = changeTracker;
@@ -21,7 +23,7 @@ export class CheckpointManager {
    */
   setCheckpoint(): number {
     const checkpointId = ++this.currentCheckpointId;
-    
+
     const checkpoint: Checkpoint = {
       id: checkpointId,
       timestamp: Date.now(),
@@ -30,7 +32,7 @@ export class CheckpointManager {
     };
 
     this.checkpoints.push(checkpoint);
-    
+
     // Keep only the last 50 checkpoints to prevent memory issues
     if (this.checkpoints.length > 50) {
       this.checkpoints.shift();
@@ -43,28 +45,35 @@ export class CheckpointManager {
    * Rollback to a specific checkpoint
    */
   rollback(checkpointId: number): RollbackResult {
-    const checkpoint = this.checkpoints.find(cp => cp.id === checkpointId);
-    
+    const validationError = this.getRevertCheckpointError(checkpointId);
+    if (validationError) {
+      return { error: validationError };
+    }
+
+    const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
+
     if (!checkpoint) {
       return {
-        error: `Checkpoint ${checkpointId} not found. Available checkpoints: ${this.checkpoints.map(cp => cp.id).join(', ')}`
+        error: `Checkpoint ${checkpointId} not found. Available checkpoints: ${this.checkpoints
+          .map((cp) => cp.id)
+          .join(", ")}`,
       };
     }
 
     try {
       // Restore change tracker state
       this.changeTracker.restoreFromSnapshot(checkpoint.entityStates);
-      
+
       // Restore identity map state
       this.identityMap.restoreFromSnapshot(checkpoint.identityMapSnapshot);
 
-      // Remove checkpoints created after this one
-      this.checkpoints = this.checkpoints.filter(cp => cp.id <= checkpointId);
-      
+      this.lastRevertedCheckpointId = checkpointId;
       return { error: null };
     } catch (error) {
       return {
-        error: `Failed to rollback to checkpoint ${checkpointId}: ${error instanceof Error ? error.message : String(error)}`
+        error: `Failed to rollback to checkpoint ${checkpointId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       };
     }
   }
@@ -73,14 +82,16 @@ export class CheckpointManager {
    * Get all available checkpoint IDs
    */
   getAvailableCheckpoints(): number[] {
-    return this.checkpoints.map(cp => cp.id);
+    return this.checkpoints.map((cp) => cp.id);
   }
 
   /**
    * Get checkpoint information
    */
-  getCheckpointInfo(checkpointId: number): { id: number; timestamp: number; entityCount: number } | null {
-    const checkpoint = this.checkpoints.find(cp => cp.id === checkpointId);
+  getCheckpointInfo(
+    checkpointId: number
+  ): { id: number; timestamp: number; entityCount: number } | null {
+    const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
     if (!checkpoint) {
       return null;
     }
@@ -96,7 +107,7 @@ export class CheckpointManager {
    * Get entities that were tracked at a specific checkpoint
    */
   getEntitiesAtCheckpoint(checkpointId: number): any[] {
-    const checkpoint = this.checkpoints.find(cp => cp.id === checkpointId);
+    const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
     if (!checkpoint) {
       return [];
     }
@@ -105,10 +116,23 @@ export class CheckpointManager {
   }
 
   /**
+   * Get the state of entities at a specific checkpoint
+   */
+  getEntityStatesAtCheckpoint(
+    checkpointId: number
+  ): Map<any, TrackedEntity> | null {
+    const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
+    if (!checkpoint) {
+      return null;
+    }
+    return checkpoint.entityStates;
+  }
+
+  /**
    * Check if a checkpoint exists
    */
   hasCheckpoint(checkpointId: number): boolean {
-    return this.checkpoints.some(cp => cp.id === checkpointId);
+    return this.checkpoints.some((cp) => cp.id === checkpointId);
   }
 
   /**
@@ -118,7 +142,7 @@ export class CheckpointManager {
     if (this.checkpoints.length === 0) {
       return null;
     }
-    return Math.max(...this.checkpoints.map(cp => cp.id));
+    return Math.max(...this.checkpoints.map((cp) => cp.id));
   }
 
   /**
@@ -127,6 +151,103 @@ export class CheckpointManager {
   clearCheckpoints(): void {
     this.checkpoints = [];
     this.currentCheckpointId = 0;
+
+    this.lastPersistedCheckpointId = null;
+    this.lastRevertedCheckpointId = null;
+  }
+
+  /**
+   * Mark a checkpoint as persisted
+   */
+  markCheckpointAsPersisted(checkpointId: number): void {
+    if (!this.hasCheckpoint(checkpointId)) {
+      throw new Error(`Checkpoint ${checkpointId} not found`);
+    }
+    this.lastPersistedCheckpointId = checkpointId;
+  }
+  /**
+   * Check if a checkpoint can be persisted
+   */
+  canPersistToCheckpoint(checkpointId: number): boolean {
+    if (!this.hasCheckpoint(checkpointId)) {
+      return false;
+    }
+
+    // Cannot persist to a checkpoint before the last persisted checkpoint
+    if (
+      this.lastPersistedCheckpointId !== null &&
+      checkpointId < this.lastPersistedCheckpointId
+    ) {
+      return false;
+    }
+
+    // Cannot persist to a checkpoint before the last reverted checkpoint
+    if (
+      this.lastRevertedCheckpointId !== null &&
+      checkpointId > this.lastRevertedCheckpointId
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+  /**
+   * Check if a checkpoint can be reverted to
+   */
+  canRevertToCheckpoint(checkpointId: number): boolean {
+    if (!this.hasCheckpoint(checkpointId)) {
+      return false;
+    }
+
+    // Cannot revert to a checkpoint after the last persisted checkpoint
+    if (
+      this.lastPersistedCheckpointId !== null &&
+      checkpointId < this.lastPersistedCheckpointId
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+  /**
+   * Get validation error for persist operation
+   */
+  getPersistedCheckpointError(checkpointId: number): string | null {
+    if (!this.hasCheckpoint(checkpointId)) {
+      return `Checkpoint ${checkpointId} not found`;
+    }
+
+    if (!this.canPersistToCheckpoint(checkpointId)) {
+      if (
+        this.lastPersistedCheckpointId !== null &&
+        checkpointId < this.lastPersistedCheckpointId
+      ) {
+        return `Cannot persist to checkpoint ${checkpointId} because it is before the last persisted checkpoint ${this.lastPersistedCheckpointId}`;
+      }
+      if (
+        this.lastRevertedCheckpointId !== null &&
+        checkpointId > this.lastRevertedCheckpointId
+      ) {
+        return `Cannot persist to checkpoint ${checkpointId} because it is after the last reverted checkpoint ${this.lastRevertedCheckpointId}`;
+      }
+      return `Cannot persist to checkpoint ${checkpointId}`;
+    }
+
+    return null;
+  }
+  /**
+   * Get validation error for revert operation
+   */
+  getRevertCheckpointError(checkpointId: number): string | null {
+    if (!this.hasCheckpoint(checkpointId)) {
+      return `Checkpoint ${checkpointId} not found`;
+    }
+
+    if (!this.canRevertToCheckpoint(checkpointId)) {
+      return `Cannot revert to checkpoint ${checkpointId} because it is before the last persisted checkpoint ${this.lastPersistedCheckpointId}`;
+    }
+
+    return null;
   }
 
   /**
@@ -137,13 +258,17 @@ export class CheckpointManager {
     modified: any[];
     deleted: any[];
   } {
-    const checkpoint = this.checkpoints.find(cp => cp.id === checkpointId);
+    const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
     if (!checkpoint) {
       return { added: [], modified: [], deleted: [] };
     }
 
-    const currentEntities = new Set(this.changeTracker.getAllTracked().map(t => t.entity));
-    const checkpointEntities = new Set(Array.from(checkpoint.entityStates.keys()));
+    const currentEntities = new Set(
+      this.changeTracker.getAllTracked().map((t) => t.entity)
+    );
+    const checkpointEntities = new Set(
+      Array.from(checkpoint.entityStates.keys())
+    );
 
     const added: any[] = [];
     const modified: any[] = [];
@@ -166,12 +291,16 @@ export class CheckpointManager {
     // Find modified entities (compare states)
     for (const entity of currentEntities) {
       if (checkpointEntities.has(entity)) {
-        const currentTracked = this.changeTracker.getAllTracked().find(t => t.entity === entity);
+        const currentTracked = this.changeTracker
+          .getAllTracked()
+          .find((t) => t.entity === entity);
         const checkpointTracked = checkpoint.entityStates.get(entity);
-        
+
         if (currentTracked && checkpointTracked) {
           // Compare entity states to detect modifications
-          if (!this.deepEqual(currentTracked.entity, checkpointTracked.entity)) {
+          if (
+            !this.deepEqual(currentTracked.entity, checkpointTracked.entity)
+          ) {
             modified.push(entity);
           }
         }
@@ -198,8 +327,14 @@ export class CheckpointManager {
     return {
       checkpointCount: this.checkpoints.length,
       totalEntitySnapshots,
-      oldestCheckpoint: this.checkpoints.length > 0 ? Math.min(...this.checkpoints.map(cp => cp.id)) : null,
-      newestCheckpoint: this.checkpoints.length > 0 ? Math.max(...this.checkpoints.map(cp => cp.id)) : null,
+      oldestCheckpoint:
+        this.checkpoints.length > 0
+          ? Math.min(...this.checkpoints.map((cp) => cp.id))
+          : null,
+      newestCheckpoint:
+        this.checkpoints.length > 0
+          ? Math.max(...this.checkpoints.map((cp) => cp.id))
+          : null,
     };
   }
 
@@ -208,15 +343,15 @@ export class CheckpointManager {
    */
   private deepEqual(a: any, b: any): boolean {
     if (a === b) return true;
-    
+
     if (a == null || b == null) return a === b;
-    
+
     if (typeof a !== typeof b) return false;
-    
+
     if (a instanceof Date && b instanceof Date) {
       return a.getTime() === b.getTime();
     }
-    
+
     if (Array.isArray(a) && Array.isArray(b)) {
       if (a.length !== b.length) return false;
       for (let i = 0; i < a.length; i++) {
@@ -224,21 +359,21 @@ export class CheckpointManager {
       }
       return true;
     }
-    
-    if (typeof a === 'object' && typeof b === 'object') {
+
+    if (typeof a === "object" && typeof b === "object") {
       const keysA = Object.keys(a);
       const keysB = Object.keys(b);
-      
+
       if (keysA.length !== keysB.length) return false;
-      
+
       for (const key of keysA) {
         if (!keysB.includes(key)) return false;
         if (!this.deepEqual(a[key], b[key])) return false;
       }
-      
+
       return true;
     }
-    
+
     return false;
   }
 }

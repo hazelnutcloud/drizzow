@@ -9,11 +9,10 @@ import type { BaseDatabaseAdapter } from "./base-adapter";
  */
 export class ChangeTracker {
   private trackedEntities = new Map<any, TrackedEntity>();
-  private identityMap: IdentityMap;
   private adapter: BaseDatabaseAdapter;
+  private persistedOriginalValues = new Map<any, Map<string, any>>();
 
-  constructor(identityMap: IdentityMap, adapter: BaseDatabaseAdapter) {
-    this.identityMap = identityMap;
+  constructor(adapter: BaseDatabaseAdapter) {
     this.adapter = adapter;
   }
 
@@ -51,12 +50,7 @@ export class ChangeTracker {
   /**
    * Mark an entity as modified and record the change
    */
-  markModified(
-    entity: any,
-    property: string,
-    oldValue: any,
-    newValue: any
-  ): void {
+  markModified(entity: any, property: string, oldValue: any): void {
     const tracked = this.trackedEntities.get(entity);
     if (!tracked) {
       throw new Error("Cannot modify untracked entity");
@@ -111,6 +105,13 @@ export class ChangeTracker {
    */
   getAllTracked(): TrackedEntity[] {
     return Array.from(this.trackedEntities.values());
+  }
+
+  /**
+   * Get a specific tracked entity
+   */
+  getTrackedEntity(entity: any): TrackedEntity | undefined {
+    return this.trackedEntities.get(entity);
   }
 
   /**
@@ -194,6 +195,17 @@ export class ChangeTracker {
    */
   clear(): void {
     this.trackedEntities.clear();
+    this.persistedOriginalValues.clear();
+  }
+
+  /**
+   * Mark an entity's original values as persisted
+   */
+  markOriginalValuesAsPersisted(
+    entity: any,
+    originalValues: Map<string, any>
+  ): void {
+    this.persistedOriginalValues.set(entity, new Map(originalValues));
   }
 
   /**
@@ -228,11 +240,30 @@ export class ChangeTracker {
       // Restore the entity state
       Object.assign(entity, tracked.entity);
 
+      // Check if we have persisted original values for this entity
+      const persistedOriginals = this.persistedOriginalValues.get(entity);
+      const originalValues =
+        persistedOriginals || new Map(tracked.originalValues);
+
+      // Recompute state based on current entity values vs original values
+      let state = tracked.state;
+      if (persistedOriginals) {
+        // If we have persisted originals, recompute the state
+        let hasChanges = false;
+        for (const [property, originalValue] of originalValues) {
+          if (entity[property] !== originalValue) {
+            hasChanges = true;
+            break;
+          }
+        }
+        state = hasChanges ? EntityState.Modified : EntityState.Unchanged;
+      }
+
       // Restore tracking info
       this.trackedEntities.set(entity, {
         entity,
-        state: tracked.state,
-        originalValues: new Map(tracked.originalValues),
+        state: state,
+        originalValues: originalValues,
         tableName: tracked.tableName,
         primaryKey: tracked.primaryKey,
       });

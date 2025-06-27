@@ -12,10 +12,7 @@ describe("Change Tracker", () => {
 
   beforeEach(() => {
     identityMap = new IdentityMap();
-    changeTracker = new ChangeTracker(
-      identityMap,
-      new TestDatabase().getAdapter()
-    );
+    changeTracker = new ChangeTracker(new TestDatabase().getAdapter());
     testUser = createTestUser(1, "alice");
   });
 
@@ -37,7 +34,7 @@ describe("Change Tracker", () => {
   test("should mark entities as modified", () => {
     changeTracker.track(testUser, users);
 
-    changeTracker.markModified(testUser, "username", "alice", "alice_new");
+    changeTracker.markModified(testUser, "username", "alice");
 
     expect(changeTracker.getState(testUser)).toBe(EntityState.Modified);
   });
@@ -63,13 +60,8 @@ describe("Change Tracker", () => {
     // Actually change the entity properties and mark as modified
     testUser.username = "alice_new";
     testUser.email = "new@example.com";
-    changeTracker.markModified(testUser, "username", "alice", "alice_new");
-    changeTracker.markModified(
-      testUser,
-      "email",
-      "alice@example.com",
-      "new@example.com"
-    );
+    changeTracker.markModified(testUser, "username", "alice");
+    changeTracker.markModified(testUser, "email", "alice@example.com");
 
     const changeSets = changeTracker.computeChangeSets();
 
@@ -147,9 +139,9 @@ describe("Change Tracker", () => {
   });
 
   test("should handle invalid operations", () => {
-    expect(() =>
-      changeTracker.markModified(testUser, "prop", "old", "new")
-    ).toThrow("Cannot modify untracked entity");
+    expect(() => changeTracker.markModified(testUser, "prop", "old")).toThrow(
+      "Cannot modify untracked entity"
+    );
     expect(() => changeTracker.markDeleted(testUser)).toThrow(
       "Cannot delete untracked entity"
     );

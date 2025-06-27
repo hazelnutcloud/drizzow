@@ -1,4 +1,10 @@
-import type { AnyDrizzleDB, ExtractSchema, RollbackResult } from "./types";
+import {
+  EntityState,
+  type AnyDrizzleDB,
+  type ExtractSchema,
+  type RollbackResult,
+  type TrackedEntity,
+} from "./types";
 import { IdentityMap } from "./identity-map";
 import { ChangeTracker } from "./change-tracker";
 import { ProxyManager } from "./proxy";
@@ -27,7 +33,7 @@ export class UnitOfWork<
     // Initialize core components
     this.adapter = adapter;
     this.identityMap = new IdentityMap();
-    this.changeTracker = new ChangeTracker(this.identityMap, adapter);
+    this.changeTracker = new ChangeTracker(adapter);
     this.proxyManager = new ProxyManager(
       this.changeTracker,
       this.identityMap,
@@ -118,7 +124,7 @@ export class UnitOfWork<
     if (primaryKey === null || primaryKey === undefined) {
       throw new Error(
         `Cannot create entity in table '${table}' without providing a primary key. ` +
-        `Please provide all primary key fields when creating new entities.`
+          `Please provide all primary key fields when creating new entities.`
       );
     }
 
@@ -155,19 +161,55 @@ export class UnitOfWork<
    */
   async save(checkpoint?: number): Promise<void> {
     let changeSets;
+    let checkpointState: Map<any, TrackedEntity> | null = null;
     if (checkpoint !== undefined) {
-      // Save only changes up to the specified checkpoint
-      if (!this.checkpointManager.hasCheckpoint(checkpoint)) {
+      const validationError =
+        this.checkpointManager.getPersistedCheckpointError(checkpoint);
+      if (validationError) {
+        throw new Error(validationError);
+      }
+
+      // Get the checkpoint state
+      checkpointState =
+        this.checkpointManager.getEntityStatesAtCheckpoint(checkpoint);
+      if (!checkpointState) {
         throw new Error(`Checkpoint ${checkpoint} not found`);
       }
-      // Get entities at checkpoint and compute changes for them
-      const entitiesAtCheckpoint =
-        this.checkpointManager.getEntitiesAtCheckpoint(checkpoint);
-      const allChangeSets = this.changeTracker.computeChangeSets();
-      // Filter changesets to only include entities that existed at the checkpoint
-      changeSets = allChangeSets.filter((cs) =>
-        entitiesAtCheckpoint.includes(cs.entity)
-      );
+
+      // Compute changesets based on what was modified up to the checkpoint
+      changeSets = [];
+      for (const [entity, checkpointTracked] of checkpointState) {
+        // Check if this entity is still being tracked
+        const currentTracked = this.changeTracker.getTrackedEntity(entity);
+        if (!currentTracked) continue;
+        // If the entity was modified at the checkpoint, include it
+        if (checkpointTracked.state === EntityState.Modified) {
+          const changeSet = {
+            entity: entity,
+            state: checkpointTracked.state,
+            changes: new Map(),
+            tableName: checkpointTracked.tableName,
+          };
+
+          // Use the changes from the checkpoint state
+          for (const [
+            property,
+            originalValue,
+          ] of checkpointTracked.originalValues) {
+            const checkpointValue = checkpointTracked.entity[property];
+            if (originalValue !== checkpointValue) {
+              changeSet.changes.set(property, {
+                old: originalValue,
+                new: checkpointValue,
+              });
+            }
+          }
+
+          if (changeSet.changes.size > 0) {
+            changeSets.push(changeSet);
+          }
+        }
+      }
     } else {
       // Save all changes
       changeSets = this.changeTracker.computeChangeSets();
@@ -178,15 +220,44 @@ export class UnitOfWork<
     try {
       // Execute all changes in a transaction
       await this.adapter.executeChangeSets(changeSets);
-      // Clear tracking for saved entities if saving all changes
-      if (checkpoint === undefined) {
+      // Mark checkpoint as persisted if saving to a specific checkpoint
+      if (checkpoint !== undefined) {
+        this.checkpointManager.markCheckpointAsPersisted(checkpoint);
+        // For checkpoint saves, we need to update the original values of saved entities
+        // to reflect their state at the checkpoint
+        for (const changeSet of changeSets) {
+          const tracked = this.changeTracker.getTrackedEntity(changeSet.entity);
+          const checkpointTracked = checkpointState?.get(changeSet.entity);
+          if (tracked && checkpointTracked) {
+            // Update original values to the checkpoint state (what was saved)
+            for (const [property, value] of Object.entries(
+              checkpointTracked.entity
+            )) {
+              tracked.originalValues.set(property, value);
+            }
+            // Mark this entity as having persisted original values
+            this.changeTracker.markOriginalValuesAsPersisted(
+              changeSet.entity,
+              tracked.originalValues
+            );
+            // Recompute the state based on current vs new original values
+            let hasChanges = false;
+            for (const [property, originalValue] of tracked.originalValues) {
+              if (tracked.entity[property] !== originalValue) {
+                hasChanges = true;
+                break;
+              }
+            }
+            tracked.state = hasChanges
+              ? EntityState.Modified
+              : EntityState.Unchanged;
+          }
+        }
+      } else {
         this.changeTracker.clear();
         this.identityMap.clear();
         this.proxyManager.clearCache();
-      } else {
-        // For checkpoint saves, only clear entities up to that checkpoint
-        const savedEntities = changeSets.map((cs) => cs.entity);
-        this.changeTracker.untrack(savedEntities);
+        this.checkpointManager.clearCheckpoints();
       }
     } catch (error) {
       throw new Error(

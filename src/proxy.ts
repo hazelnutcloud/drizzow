@@ -63,8 +63,7 @@ export class ProxyManager {
             this.changeTracker.markModified(
               receiver,
               property,
-              oldValue,
-              value
+              oldValue
             );
           }
         }
@@ -197,7 +196,6 @@ export class ProxyManager {
             this.changeTracker.markModified(
               parent,
               parentProperty,
-              parent[parentProperty],
               parent[parentProperty]
             );
           }
