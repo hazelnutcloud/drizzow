@@ -42,6 +42,8 @@ export class UnitOfWork<
       (this as any)[key] = {
         findFirst: (...params: any[]) => this.findFirst(key, ...params),
         findMany: (...params: any[]) => this.findMany(key, ...params),
+        create: (data: any) => this.create(key, data),
+        delete: (entity: any) => this.deleteEntity(key, entity),
       };
     }
   }
@@ -94,6 +96,58 @@ export class UnitOfWork<
 
     // Wrap all results with proxies for change tracking
     return this.proxyManager.wrapQueryResults(results, tableInstance);
+  }
+
+  private create(table: string, data: any) {
+    // Get the table instance from schema
+    const tableInstance = this.schema[table];
+    if (!tableInstance) {
+      throw new Error(`Table '${table}' not found in schema`);
+    }
+
+    // Create a new entity with the provided data
+    let entity = { ...data };
+
+    // Check if the entity already has a primary key
+    const primaryKey = this.adapter.extractPrimaryKeyValue(
+      tableInstance,
+      entity
+    );
+
+    // Require primary key for create operations
+    if (primaryKey === null || primaryKey === undefined) {
+      throw new Error(
+        `Cannot create entity in table '${table}' without providing a primary key. ` +
+        `Please provide all primary key fields when creating new entities.`
+      );
+    }
+
+    // Create a proxy for the entity and mark it as added
+    const proxy = this.proxyManager.createNewEntityProxy(entity, tableInstance);
+
+    // Register the proxy in the identity map
+    this.identityMap.register(table, primaryKey, proxy);
+
+    return proxy;
+  }
+
+  private deleteEntity(table: string, entity: any) {
+    // Get the table instance from schema
+    const tableInstance = this.schema[table];
+    if (!tableInstance) {
+      throw new Error(`Table '${table}' not found in schema`);
+    }
+
+    // Check if the entity is being tracked
+    if (!this.changeTracker.isTracked(entity)) {
+      throw new Error(
+        `Cannot delete untracked entity. Entity must be loaded through UnitOfWork or created with create().`
+      );
+    }
+
+    // Mark the entity as deleted
+    this.changeTracker.markDeleted(entity);
+    this.identityMap.remove(table, entity);
   }
 
   /**

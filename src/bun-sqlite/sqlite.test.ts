@@ -3,8 +3,7 @@ import { getTableConfig } from "drizzle-orm/sqlite-core";
 
 import { SQLiteAdapter } from "./sqlite";
 import { EntityState } from "../types";
-import { users } from "../schema";
-import { TestDatabase, createTestUser } from "../uow.test";
+import { TestDatabase, createTestUser, users } from "../uow.test";
 
 describe("SQLite Adapter", () => {
   let testDb: TestDatabase;

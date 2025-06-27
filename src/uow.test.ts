@@ -403,11 +403,17 @@ describe("Unit of Work", () => {
     });
 
     test("should handle partial save to checkpoint", async () => {
-      const users = await uow.users.findMany();
+      // Load only first two users
+      const user1 = await uow.users.findFirst({
+        where: (users, { eq }) => eq(users.id, 1),
+      });
+      const user2 = await uow.users.findFirst({
+        where: (users, { eq }) => eq(users.id, 2),
+      });
 
       // Modify entities tracked at checkpoint
-      users[0]!.username = "checkpoint_mod1";
-      users[1]!.username = "checkpoint_mod2";
+      user1!.username = "checkpoint_mod1";
+      user2!.username = "checkpoint_mod2";
 
       const checkpoint = uow.setCheckpoint();
 
@@ -422,17 +428,12 @@ describe("Unit of Work", () => {
       // Save only up to checkpoint
       await uow.save(checkpoint);
 
-      // Should have saved checkpoint entities but not the new one
-      // Note: Current implementation untracks all saved entities, so pending changes becomes 0
-      // TODO: Improve checkpoint save to keep tracking state for saved entities
       expect(uow.getStats().pendingChanges).toBe(1);
 
       // Verify in database
       const dbUsers = await testDb.getDrizzleInstance().query.users.findMany();
-      expect(dbUsers.find((u) => u.id === 1)?.username).toBe("checkpoint_mod1");
-      expect(dbUsers.find((u) => u.id === 2)?.username).toBe("checkpoint_mod2");
-      // Note: Due to current checkpoint save implementation, all tracked entities get saved
-      // TODO: Improve checkpoint save to only save entities that existed at checkpoint
+      expect(dbUsers.find((u) => u.id === user1!.id)?.username).toBe("checkpoint_mod1");
+      expect(dbUsers.find((u) => u.id === user2!.id)?.username).toBe("checkpoint_mod2");
       expect(dbUsers.find((u: any) => u.id === 3)?.username).toBe("charlie"); // Currently gets saved
     });
   });
@@ -612,34 +613,50 @@ describe("Integration Tests", () => {
   test("complete workflow with checkpoints", async () => {
     // Setup
     const users = await uow.users.findMany();
-    const originalUsernames = users.map((u) => u.username);
 
-    // First checkpoint
-    const checkpoint1 = uow.setCheckpoint();
+    // Modify first user
     users[0]!.username = "alice_cp1";
+    
+    // Create checkpoint1 AFTER the modification
+    const checkpoint1 = uow.setCheckpoint();
+    
+    // Save at checkpoint1 - this should save users[0] with "alice_cp1"
     await uow.save(checkpoint1);
 
-    // Second checkpoint
-    const checkpoint2 = uow.setCheckpoint();
+    // Modify second user
     users[1]!.username = "bob_cp2";
+    
+    // Create checkpoint2 AFTER modifying second user
+    const checkpoint2 = uow.setCheckpoint();
 
-    // Third change (not checkpointed)
+    // Third change (after checkpoint2)
     users[2]!.username = "charlie_no_cp";
 
+    // At this point:
+    // - users[0] should be unchanged (saved at checkpoint1)
+    // - users[1] should be modified ("bob_cp2")
+    // - users[2] should be modified ("charlie_no_cp")
     expect(uow.getStats().pendingChanges).toBe(2);
 
     // Rollback to checkpoint2
     uow.rollback(checkpoint2);
 
-    expect(users[1]?.username).toBe("bob"); // Restored
-    expect(users[2]?.username).toBe("charlie"); // Restored
-    expect(uow.getStats().pendingChanges).toBe(0);
+    // After rollback:
+    // - users[0] should still be "alice_cp1" (was saved)
+    // - users[1] should still be "bob_cp2" (was at checkpoint2)
+    // - users[2] should be "charlie" (rolled back)
+    expect(users[0]?.username).toBe("alice_cp1");
+    expect(users[1]?.username).toBe("bob_cp2");
+    expect(users[2]?.username).toBe("charlie");
+    expect(uow.getStats().pendingChanges).toBe(1); // Only users[1] is modified
 
-    // But alice_cp1 should still be saved in database
-    const dbUser = await testDb.getDrizzleInstance().query.users.findFirst({
-      where: (users, { eq }) => eq(users.id, 1),
+    // Verify database state
+    const dbUsers = await testDb.getDrizzleInstance().query.users.findMany({
+      orderBy: (users, { asc }) => asc(users.id),
     });
-    expect(dbUser?.username).toBe("alice_cp1");
+    expect(dbUsers[0]?.username).toBe("alice_cp1"); // Saved at checkpoint1
+    expect(dbUsers[1]?.username).toBe("bob"); // Not saved yet
+    expect(dbUsers[2]?.username).toBe("charlie"); // Not saved
   });
 
   test("batch operations with mixed changes", async () => {
@@ -692,17 +709,13 @@ describe("Integration Tests", () => {
     // Save up to checkpoint B
     await uow.save(checkpointB);
 
-    // Note: Current checkpoint save implementation clears all tracking
-    // TODO: Improve to maintain tracking state properly
-    expect(uow.getStats().pendingChanges).toBe(0);
+    expect(uow.getStats().pendingChanges).toBe(3);
 
     // Rollback to checkpoint C
     uow.rollback(checkpointC);
 
     expect(users[0]?.email).toBe("alice@example.com"); // Rolled back
-    // Note: Current implementation may not perfectly track checkpoint rollbacks
-    // The important thing is that the rollback functionally worked (email was restored)
-    expect(uow.getStats().pendingChanges).toBeGreaterThanOrEqual(1); // Changes remain after rollback
+    expect(uow.getStats().pendingChanges).toBe(1); // Changes remain after rollback
 
     // Verify database state
     const dbUsers = await testDb.getDrizzleInstance().query.users.findMany({
@@ -710,11 +723,9 @@ describe("Integration Tests", () => {
     });
 
     expect(dbUsers[0]?.username).toBe("state_A"); // Saved
-    expect(dbUsers[1]?.username).toBe("state_B"); // Saved
-    // Note: Current checkpoint save implementation saves more than intended
-    expect(dbUsers[2]?.username).toBe("state_C"); // Currently gets saved too
-    // Note: The email change was also saved due to checkpoint save implementation
-    expect(dbUsers[0]?.email).toBe("after_C@example.com"); // Email was saved but then rolled back in memory
+    expect(dbUsers[1]?.username).toBe("bob"); // should NOT be saved
+    expect(dbUsers[2]?.username).toBe("charlie");
+    expect(dbUsers[0]?.email).toBe("alice@example.com");
   });
 
   test("error recovery", async () => {

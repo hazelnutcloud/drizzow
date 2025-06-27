@@ -20,7 +20,11 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
     this.schema = db._.fullSchema;
   }
 
-  override extractPrimaryKey(table: Table, entity: any): any {
+  override async insertNewEntity(table: Table, data: any): Promise<any> {
+    return (await this.db.insert(table).values(data).returning())[0];
+  }
+
+  override extractPrimaryKeyValue(table: Table, entity: any) {
     const { columns, primaryKeys } = getTableConfig(table);
     const primaryKeyValues: any[] = [];
 
@@ -221,12 +225,5 @@ export class SQLiteAdapter extends BaseDatabaseAdapter {
     }
 
     return primaryKeyColumns;
-  }
-
-  /**
-   * Check if a table has composite primary keys
-   */
-  private hasCompositePrimaryKey(table: Table): boolean {
-    return this.getPrimaryKeyColumns(table).length > 1;
   }
 }

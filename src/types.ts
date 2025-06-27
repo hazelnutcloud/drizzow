@@ -1,5 +1,8 @@
 import type {
   ExtractTablesWithRelations,
+  InferInsertModel,
+  InferModelFromColumns,
+  InferSelectModel,
   Table,
   TablesRelationalConfig,
 } from "drizzle-orm";
@@ -58,7 +61,7 @@ export interface Checkpoint {
  * Supported Drizzle database types
  */
 export type AnyDrizzleDB<
-  TSchema extends Record<string, unknown> = Record<string, unknown>
+  TSchema extends Record<string, any> = Record<string, any>
 > = BaseSQLiteDatabase<any, any, TSchema>;
 
 export type ExtractSchema<TDatabase> = TDatabase extends AnyDrizzleDB<
@@ -67,20 +70,27 @@ export type ExtractSchema<TDatabase> = TDatabase extends AnyDrizzleDB<
   ? TSchema
   : never;
 
-export type GenericRelationalQueryBuilder<
+export type UnitOfWorkRepos<
   TDatabase extends AnyDrizzleDB,
-  TFullSchema extends Record<string, unknown> = ExtractSchema<TDatabase>,
+  TFullSchema extends Record<string, Table> = ExtractSchema<TDatabase>,
   TSchema extends TablesRelationalConfig = ExtractTablesWithRelations<TFullSchema>
 > = {} extends TSchema
   ? {}
   : TDatabase extends BaseSQLiteDatabase<infer mode, any, TFullSchema>
   ? {
-      [K in keyof TSchema]: SqliteRelationalQueryBuilder<
-        mode,
-        TFullSchema,
-        TSchema,
-        TSchema[K]
-      >;
+      [K in keyof TSchema]: K extends keyof TFullSchema
+        ? SqliteRelationalQueryBuilder<
+            mode,
+            TFullSchema,
+            TSchema,
+            TSchema[K]
+          > & {
+            create: (
+              v: InferInsertModel<TFullSchema[K]>
+            ) => InferSelectModel<TFullSchema[K]>;
+            delete: (v: InferSelectModel<TFullSchema[K]>) => void;
+          }
+        : {};
     }
   : never;
 
@@ -98,4 +108,5 @@ export interface DatabaseAdapter {
   executeDelete(table: Table, id: any): Promise<void>;
   commitTransaction(tx: any): Promise<void>;
   rollbackTransaction(tx: any): Promise<void>;
+  insertNewEntity(table: Table, data: any): Promise<any>;
 }

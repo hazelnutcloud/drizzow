@@ -2,8 +2,13 @@
   "name": "drizzle-uow",
   "module": "./src/index.ts",
   "type": "module",
+  "scripts": {
+    "bench": "bun run benchmarks.ts",
+    "bench:gc": "bun --expose-gc run benchmarks.ts"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "mitata": "^1.0.34"
   },
   "peerDependencies": {
     "typescript": "^5"

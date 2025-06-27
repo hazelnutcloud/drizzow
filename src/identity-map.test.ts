@@ -120,7 +120,7 @@ describe("Identity Map", () => {
   });
 
   test("should extract primary key from table schema", () => {
-    const primaryKey = adapter.extractPrimaryKey(users, testUser);
+    const primaryKey = adapter.extractPrimaryKeyValue(users, testUser);
     expect(primaryKey).toBe(1);
   });
 

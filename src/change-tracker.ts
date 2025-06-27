@@ -30,7 +30,7 @@ export class ChangeTracker {
     }
 
     const tableName = getTableName(table);
-    const primaryKey = this.adapter.extractPrimaryKey(table, entity);
+    const primaryKey = this.adapter.extractPrimaryKeyValue(table, entity);
 
     const trackedEntity: TrackedEntity = {
       entity,

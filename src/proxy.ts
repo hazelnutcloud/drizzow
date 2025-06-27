@@ -138,7 +138,7 @@ export class ProxyManager {
     }
 
     const tableName = getTableName(table);
-    const primaryKey = this.adapter.extractPrimaryKey(table, entity);
+    const primaryKey = this.adapter.extractPrimaryKeyValue(table, entity);
 
     // Check if entity already exists in identity map
     const existingEntity = this.identityMap.get(tableName, primaryKey);

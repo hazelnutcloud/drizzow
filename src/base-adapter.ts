@@ -1,7 +1,6 @@
-import type { Table, TableConfig } from "drizzle-orm";
+import type { Table } from "drizzle-orm";
 import type { DatabaseAdapter, ChangeSet, EntityState } from "./types";
 import { EntityState as EntityStateEnum } from "./types";
-import { getTableConfig } from "drizzle-orm/sqlite-core";
 
 /**
  * Base database adapter with common functionality
@@ -23,6 +22,7 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   abstract executeDelete(table: Table, id: any): Promise<void>;
   abstract commitTransaction(tx: any): Promise<void>;
   abstract rollbackTransaction(tx: any): Promise<void>;
+  abstract insertNewEntity(table: Table, data: any): Promise<any>;
 
   /**
    * Execute all changes in a transaction
@@ -90,31 +90,7 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   /**
    * Extract primary key value from an entity
    */
-  protected extractPrimaryKeyValue(table: Table, entity: any): any {
-    const { columns, primaryKeys } = getTableConfig(table);
-    const primaryKeyValues: any[] = [];
-
-    // Use the primaryKeys array from getTableConfig if available
-    if (primaryKeys && primaryKeys.length > 0) {
-      for (const pk of primaryKeys) {
-        for (const column of pk.columns) {
-          primaryKeyValues.push(entity[column.name]);
-        }
-      }
-    } else {
-      // Fallback: iterate through columns array to find primary keys
-      for (const column of columns) {
-        if ((column as any).primary) {
-          primaryKeyValues.push(entity[column.name]);
-        }
-      }
-    }
-
-    // Return single value for single primary key, array for composite keys
-    return primaryKeyValues.length === 1
-      ? primaryKeyValues[0]
-      : primaryKeyValues;
-  }
+  abstract extractPrimaryKeyValue(table: Table, entity: any): any;
 
   /**
    * Get table instance from table name
@@ -180,6 +156,4 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
       await operation(batch);
     }
   }
-
-  abstract extractPrimaryKey(table: Table, entity: unknown): unknown;
 }
