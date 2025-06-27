@@ -7,6 +7,7 @@ import type {
   ExtractTablesWithRelations,
   InferInsertModel,
   InferModelFromColumns,
+  InferSelectModel,
   Table,
   TablesRelationalConfig,
 } from "drizzle-orm";
@@ -26,10 +27,11 @@ declare function createUow<
             create: (
               v: InferInsertModel<FullSchema[K]>
             ) => InferModelFromColumns<Schema[K]["columns"]>;
+            delete: (v: InferSelectModel<FullSchema[K]>) => void;
           }
         : never;
     } & {
-      save: () => Promise<void>;
+      save: (checkpoint: number) => Promise<void>;
       setCheckpoint: () => number;
       rollback: (checkpoint: number) => {
         error: string;
@@ -52,9 +54,11 @@ const newUser = uow.users.create({
   username: "new_user",
 });
 
-await uow.save(); // computes a changeset, builds queries, and persists to the database
+uow.users.delete(newUser);
 
 const checkpoint = uow.setCheckpoint();
+
+await uow.save(checkpoint); // computes a changeset, builds queries, and persists to the database. optionally takes a checkpoint to only save at that checkpoint
 
 // ... do changes
 

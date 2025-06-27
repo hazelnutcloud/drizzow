@@ -11,11 +11,13 @@ graph TD
     B --> D[Change Tracker]
     B --> E[Transaction Manager]
     B --> F[Checkpoint Manager]
+    B --> G[Identity Map]
     
-    C --> G[Entity Proxies]
-    D --> H[Change Set]
-    E --> I[Query Builder]
-    F --> J[State Snapshots]
+    C --> H[Entity Proxies]
+    D --> I[Change Set]
+    E --> J[Query Builder]
+    F --> K[State Snapshots]
+    G --> L[Entity Cache]
 ```
 
 ### Key Design Patterns
@@ -44,11 +46,12 @@ const entityProxy = new Proxy(originalEntity, {
 // Each table gets a repository-like interface
 uow.users.findFirst()  // Drizzle query, proxy-wrapped result
 uow.users.create()     // New entity creation with tracking
+uow.users.delete()     // Mark entity for deletion
 ```
 
 **Integration:**
 - Extends Drizzle's query API
-- Adds UoW-specific methods (create)
+- Adds UoW-specific methods (create, delete)
 - Maintains type safety
 
 #### 3. Unit of Work Pattern
@@ -58,9 +61,11 @@ class UnitOfWork {
   private changes: Map<Entity, ChangeSet>;
   private newEntities: Set<Entity>;
   private deletedEntities: Set<Entity>;
+  private identityMap: IdentityMap;
   
-  async save() {
+  async save(checkpoint?: number) {
     // Build and execute queries in transaction
+    // Optionally save only up to specified checkpoint
   }
 }
 ```
@@ -69,6 +74,36 @@ class UnitOfWork {
 - Track all entity states
 - Coordinate database operations
 - Manage transaction boundaries
+- Ensure entity uniqueness via identity map
+
+#### 4. Identity Map Pattern
+```typescript
+// Ensures single instance per entity identity
+class IdentityMap {
+  private entities: Map<string, Map<any, Entity>>;
+  
+  get(table: string, id: any): Entity | undefined {
+    return this.entities.get(table)?.get(id);
+  }
+  
+  register(table: string, id: any, entity: Entity): void {
+    if (!this.entities.has(table)) {
+      this.entities.set(table, new Map());
+    }
+    this.entities.get(table)!.set(id, entity);
+  }
+  
+  remove(table: string, id: any): void {
+    this.entities.get(table)?.delete(id);
+  }
+}
+```
+
+**Benefits:**
+- Prevents duplicate entity instances
+- Ensures consistency across references
+- Improves performance by caching
+- Simplifies relationship management
 
 ## Technical Implementation Details
 
@@ -130,6 +165,7 @@ type UoWTable<TTable> = {
   
   // UoW-specific methods
   create(data: InferInsert<TTable>): Proxied<InferSelect<TTable>>;
+  delete(entity: InferSelect<TTable>): void;
 }
 ```
 
@@ -161,6 +197,7 @@ interface Checkpoint {
   id: number;
   timestamp: number;
   entityStates: Map<Entity, EntitySnapshot>;
+  identityMapSnapshot: Map<string, Map<any, Entity>>;
 }
 
 class CheckpointManager {
@@ -168,11 +205,30 @@ class CheckpointManager {
   private currentCheckpoint: number = 0;
   
   setCheckpoint(): number {
-    // Snapshot current state
+    // Snapshot current state including identity map
+    const checkpoint: Checkpoint = {
+      id: ++this.currentCheckpoint,
+      timestamp: Date.now(),
+      entityStates: this.captureEntityStates(),
+      identityMapSnapshot: this.captureIdentityMap()
+    };
+    this.checkpoints.push(checkpoint);
+    return checkpoint.id;
   }
   
   rollback(checkpointId: number): RollbackResult {
-    // Restore entity states
+    // Restore entity states and identity map
+    const checkpoint = this.checkpoints.find(cp => cp.id === checkpointId);
+    if (!checkpoint) {
+      return { error: "Checkpoint not found" };
+    }
+    this.restoreEntityStates(checkpoint.entityStates);
+    this.restoreIdentityMap(checkpoint.identityMapSnapshot);
+    return { error: null };
+  }
+  
+  getChangesUpToCheckpoint(checkpointId: number): ChangeSet[] {
+    // Get all changes up to specified checkpoint for selective saving
   }
 }
 ```

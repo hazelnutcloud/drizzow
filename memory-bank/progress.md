@@ -53,7 +53,9 @@
 
 5. **CRUD Operations**
    - [ ] Implement `create()` method
+   - [ ] Implement `delete()` method
    - [ ] Track new entities
+   - [ ] Track deleted entities
    - [ ] Handle entity relationships
    - [ ] ID generation strategy
 
@@ -68,6 +70,13 @@
    - [ ] Rollback mechanism
    - [ ] Memory efficiency
    - [ ] Error reporting
+   - [ ] Checkpoint-based save functionality
+
+8. **Identity Map Pattern**
+   - [ ] Entity uniqueness enforcement
+   - [ ] Entity caching system
+   - [ ] Reference consistency
+   - [ ] Performance optimization
 
 #### Database Support
 1. **Adapter System**

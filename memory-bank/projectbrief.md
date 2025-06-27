@@ -16,16 +16,20 @@ An implementation of the unit-of-work pattern as an extension for DrizzleORM tha
 1. **Change Tracking**
    - Automatically track property changes on entities using proxies
    - Support creating new entities with `create()` method
+   - Support deleting entities with `delete()` method
    - Maintain change history for rollback capabilities
+   - Implement identity map pattern to ensure entity uniqueness
 
 2. **Transaction Management**
    - `save()` method to compute changesets and persist all changes
+   - `save(checkpoint)` to persist changes up to a specific checkpoint
    - Build and execute appropriate queries based on tracked changes
 
 3. **Checkpoint System**
    - `setCheckpoint()` to mark points in time
    - `rollback()` to revert to previous checkpoints in-memory
    - Return error information on rollback operations
+   - Support saving changes up to specific checkpoints
 
 ### API Surface
 ```typescript
@@ -38,15 +42,24 @@ const users = await uow.users.findMany();
 // Create new entities
 const newUser = uow.users.create({ username: "new_user" });
 
+// Delete entities
+uow.users.delete(newUser);
+
 // Automatic change tracking via proxies
 user.username = "updated_username";
 
-// Persist changes
-await uow.save();
-
 // Checkpoint management
 const checkpoint = uow.setCheckpoint();
+
+// Persist changes (optionally up to a specific checkpoint)
+await uow.save();  // Save all changes
+await uow.save(checkpoint);  // Save only up to checkpoint
+
+// Rollback to checkpoint
 const result = uow.rollback(checkpoint);
+if (result.error) {
+  console.log(result.error);
+}
 ```
 
 ### Technical Constraints

@@ -8,6 +8,8 @@ Setting up the initial memory bank for the drizzle-uow project. The project is i
 2. Documented project requirements from spec.md
 3. Clarified that the library must support ALL Drizzle databases, not just SQLite
 4. Established foundational documentation files
+5. Updated memory bank with delete operations and checkpoint save functionality
+6. Added identity map pattern to architecture
 
 ## Next Steps
 
@@ -31,12 +33,19 @@ Setting up the initial memory bank for the drizzle-uow project. The project is i
 3. **Basic CRUD Operations**
    - Implement `findFirst()` and `findMany()` with proxy wrapping
    - Implement `create()` method
-   - Track entity states (new, modified, unchanged)
+   - Implement `delete()` method
+   - Track entity states (new, modified, deleted, unchanged)
 
-4. **Save Mechanism**
+4. **Identity Map Implementation**
+   - Entity uniqueness enforcement
+   - Caching for performance
+   - Reference consistency
+
+5. **Save Mechanism**
    - Change detection
    - Query building
    - Transaction management
+   - Checkpoint-based saving (save up to specific checkpoint)
 
 ## Active Decisions
 
