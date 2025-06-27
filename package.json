@@ -3,8 +3,8 @@
   "module": "./src/index.ts",
   "type": "module",
   "scripts": {
-    "bench": "bun run benchmarks.ts",
-    "bench:gc": "bun --expose-gc run benchmarks.ts"
+    "bench": "bun run benchmarks/benchmarks.ts",
+    "bench:gc": "bun --expose-gc run benchmarks/benchmarks.ts"
   },
   "devDependencies": {
     "@types/bun": "latest",
