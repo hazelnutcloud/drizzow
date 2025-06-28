@@ -1,4 +1,4 @@
-import type { Table } from "drizzle-orm";
+import type { Column, DBQueryConfig, Table, TableConfig } from "drizzle-orm";
 import type { DatabaseAdapter, ChangeSet, EntityState } from "./types";
 import { EntityState as EntityStateEnum } from "./types";
 
@@ -7,9 +7,11 @@ import { EntityState as EntityStateEnum } from "./types";
  */
 export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   protected db: any;
+  protected schema: Record<string, Table>;
 
   constructor(db: any) {
     this.db = db;
+    this.schema = db._.fullSchema;
   }
 
   abstract beginTransaction(): Promise<any>;
@@ -110,21 +112,6 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   abstract getDatabaseType(): "sqlite" | "postgres" | "mysql";
 
   /**
-   * Check if the database supports a specific feature
-   */
-  supportsReturning(): boolean {
-    const dbType = this.getDatabaseType();
-    return dbType === "postgres" || dbType === "sqlite";
-  }
-
-  /**
-   * Check if the database supports batch operations
-   */
-  supportsBatchOperations(): boolean {
-    return true; // Most databases support batch operations
-  }
-
-  /**
    * Get the maximum number of parameters for a single query
    */
   getMaxParameters(): number {
@@ -156,4 +143,13 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
       await operation(batch);
     }
   }
+
+  abstract getTableConfig(table: Table): TableConfig;
+
+  abstract getPrimaryKeyColumn(table: Table): Column | null;
+
+  abstract serializeQuery(
+    tableAlias: string,
+    query: DBQueryConfig<"many", true>
+  ): string;
 }

@@ -7,7 +7,7 @@ import {
   TestDatabase,
   users,
 } from "./uow.test";
-import type { SQLiteAdapter } from "./bun-sqlite/sqlite";
+import type { SQLiteAdapter } from "./bun-sqlite/adapter";
 
 describe("Identity Map", () => {
   let identityMap: IdentityMap;

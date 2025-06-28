@@ -5,7 +5,7 @@ import { ChangeTracker } from "./change-tracker";
 import { ProxyManager } from "./proxy";
 import { EntityState } from "./types";
 import { createTestUser, TestDatabase, users } from "./uow.test";
-import type { SQLiteAdapter } from "./bun-sqlite/sqlite";
+import type { SQLiteAdapter } from "./bun-sqlite/adapter";
 
 describe("Proxy Manager", () => {
   let proxyManager: ProxyManager;

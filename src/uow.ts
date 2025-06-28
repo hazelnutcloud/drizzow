@@ -10,6 +10,13 @@ import { ChangeTracker } from "./change-tracker";
 import { ProxyManager } from "./proxy";
 import { CheckpointManager } from "./checkpoint-manager";
 import type { BaseDatabaseAdapter } from "./base-adapter";
+import {
+  aliasedTableColumn,
+  getOperators,
+  sql,
+  type DBQueryConfig,
+  type Table,
+} from "drizzle-orm";
 
 /**
  * Unit of Work implementation
@@ -46,29 +53,29 @@ export class UnitOfWork<
 
     for (const key of Object.keys(db.query)) {
       (this as any)[key] = {
-        findFirst: (...params: any[]) => this.findFirst(key, ...params),
-        findMany: (...params: any[]) => this.findMany(key, ...params),
+        findFirst: (config: DBQueryConfig<"many", true>) =>
+          this.findFirst(key, config),
+        findMany: (config: DBQueryConfig<"many", true>) =>
+          this.findMany(key, config),
         create: (data: any) => this.create(key, data),
         delete: (entity: any) => this.deleteEntity(key, entity),
       };
     }
   }
 
-  private async findFirst(table: string, ...params: any[]) {
+  private async findFirst(table: string, config: DBQueryConfig<"many", true>) {
+    const queryKey = this.adapter.serializeQuery(table, config);
+
+    // TODO: check identity map first
+
     // Get the table instance from schema
-    const tableInstance = this.schema[table];
-    if (!tableInstance) {
-      throw new Error(`Table '${table}' not found in schema`);
-    }
+    const tableInstance = this.schema[table]!;
 
     // Get the query builder for this table
-    const queryBuilder = (this.db.query as any)[table];
-    if (!queryBuilder) {
-      throw new Error(`Query builder for table '${table}' not found`);
-    }
+    const queryBuilder = (this.db.query as any)[table]!;
 
     // Execute the query using Drizzle's relational query builder
-    const result = await queryBuilder.findFirst(...params);
+    const result = await queryBuilder.findFirst(config);
 
     // If no result found, return undefined
     if (!result) {
@@ -79,7 +86,11 @@ export class UnitOfWork<
     return this.proxyManager.wrapQueryResults(result, tableInstance);
   }
 
-  private async findMany(table: string, ...params: any[]) {
+  private async findMany(table: string, config: DBQueryConfig<"many", true>) {
+    const queryKey = this.adapter.serializeQuery(table, config);
+
+    // TODO: check identity map first
+
     // Get the table instance from schema
     const tableInstance = this.schema[table];
     if (!tableInstance) {
@@ -93,7 +104,7 @@ export class UnitOfWork<
     }
 
     // Execute the query using Drizzle's relational query builder
-    const results = await queryBuilder.findMany(...params);
+    const results = await queryBuilder.findMany(config);
 
     // If no results found, return empty array
     if (!results || !Array.isArray(results)) {

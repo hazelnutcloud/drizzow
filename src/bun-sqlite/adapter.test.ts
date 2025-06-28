@@ -1,13 +1,13 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { getTableConfig } from "drizzle-orm/sqlite-core";
 
-import { SQLiteAdapter } from "./sqlite";
+import { BunSQLiteAdapter } from "./adapter";
 import { EntityState } from "../types";
 import { TestDatabase, createTestUser, users } from "../uow.test";
 
 describe("SQLite Adapter", () => {
   let testDb: TestDatabase;
-  let adapter: SQLiteAdapter;
+  let adapter: BunSQLiteAdapter;
 
   beforeEach(async () => {
     testDb = new TestDatabase();
@@ -21,14 +21,6 @@ describe("SQLite Adapter", () => {
 
   test("should identify as SQLite", () => {
     expect(adapter.getDatabaseType()).toBe("sqlite");
-  });
-
-  test("should support returning clauses", () => {
-    expect(adapter.supportsReturning()).toBe(true);
-  });
-
-  test("should support batch operations", () => {
-    expect(adapter.supportsBatchOperations()).toBe(true);
   });
 
   test("should have correct parameter limits", () => {

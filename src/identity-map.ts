@@ -1,6 +1,4 @@
 import type { Table } from "drizzle-orm";
-import type { AnyColumn } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/sqlite-core";
 
 /**
  * Identity Map implementation for ensuring entity uniqueness
@@ -110,14 +108,6 @@ export class IdentityMap {
       }
       this.entities.set(tableName, restoredTableMap);
     }
-  }
-
-  /**
-   * Get table name from a table instance
-   */
-  getTableName(table: Table): string {
-    const { name } = getTableConfig(table);
-    return name;
   }
 
   /**

@@ -4,7 +4,7 @@ import Database from "bun:sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { UnitOfWork } from "./uow";
-import { SQLiteAdapter } from "./bun-sqlite/sqlite";
+import { SQLiteAdapter } from "./bun-sqlite/adapter";
 import type { CreateUowReturnType } from "./bun-sqlite";
 
 // Test Schema
