@@ -102,7 +102,7 @@ export abstract class SqliteAdapter extends BaseDatabaseAdapter {
     tableAlias: string,
     config: DBQueryConfig<"many", true>
   ): string {
-    const preparedQuery = this.prepareQueryForSerializing(tableAlias, config);
+    const preparedQuery = this.prepareQueryForSerializing(tableAlias, config || {});
 
     return JSON.stringify(preparedQuery);
   }

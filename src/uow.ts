@@ -32,10 +32,22 @@ export class UnitOfWork<
   private proxyManager: ProxyManager;
   private checkpointManager: CheckpointManager;
   private adapter: BaseDatabaseAdapter;
+  private queryCache: Map<string, { result: any; timestamp: number }>;
+  private cacheEnabled: boolean;
+  private cacheTTL: number;
 
-  constructor(db: TDatabase, adapter: BaseDatabaseAdapter) {
+  constructor(
+    db: TDatabase,
+    adapter: BaseDatabaseAdapter,
+    options?: { cacheEnabled?: boolean; cacheTTL?: number }
+  ) {
     this.db = db;
     this.schema = db._.fullSchema as never;
+
+    // Initialize cache settings
+    this.cacheEnabled = options?.cacheEnabled ?? true;
+    this.cacheTTL = options?.cacheTTL ?? 60000; // Default 60 seconds
+    this.queryCache = new Map();
 
     // Initialize core components
     this.adapter = adapter;
@@ -66,7 +78,20 @@ export class UnitOfWork<
   private async findFirst(table: string, config: DBQueryConfig<"many", true>) {
     const queryKey = this.adapter.serializeQuery(table, config);
 
-    // TODO: check identity map first
+    // Check cache if enabled
+    if (this.cacheEnabled) {
+      const cached = this.queryCache.get(queryKey);
+      if (cached) {
+        const now = Date.now();
+        if (now - cached.timestamp < this.cacheTTL) {
+          // Return cached result if still valid
+          return cached.result;
+        } else {
+          // Remove expired cache entry
+          this.queryCache.delete(queryKey);
+        }
+      }
+    }
 
     // Get the table instance from schema
     const tableInstance = this.schema[table]!;
@@ -77,19 +102,48 @@ export class UnitOfWork<
     // Execute the query using Drizzle's relational query builder
     const result = await queryBuilder.findFirst(config);
 
-    // If no result found, return undefined
+    // If no result found, cache and return undefined
     if (!result) {
+      if (this.cacheEnabled) {
+        this.queryCache.set(queryKey, {
+          result: undefined,
+          timestamp: Date.now(),
+        });
+      }
       return undefined;
     }
 
     // Wrap the result with proxy for change tracking
-    return this.proxyManager.wrapQueryResults(result, tableInstance);
+    const wrappedResult = this.proxyManager.wrapQueryResults(result, tableInstance);
+
+    // Cache the wrapped result
+    if (this.cacheEnabled) {
+      this.queryCache.set(queryKey, {
+        result: wrappedResult,
+        timestamp: Date.now(),
+      });
+    }
+
+    return wrappedResult;
   }
 
   private async findMany(table: string, config: DBQueryConfig<"many", true>) {
     const queryKey = this.adapter.serializeQuery(table, config);
 
-    // TODO: check identity map first
+    // Check cache if enabled
+    if (this.cacheEnabled) {
+      const cached = this.queryCache.get(queryKey);
+      if (cached) {
+        const now = Date.now();
+        if (now - cached.timestamp < this.cacheTTL) {
+          // Return cached result if still valid
+          return cached.result;
+        } else {
+          // Remove expired cache entry
+          this.queryCache.delete(queryKey);
+        }
+      }
+    }
 
     // Get the table instance from schema
     const tableInstance = this.schema[table];
@@ -106,13 +160,29 @@ export class UnitOfWork<
     // Execute the query using Drizzle's relational query builder
     const results = await queryBuilder.findMany(config);
 
-    // If no results found, return empty array
+    // If no results found, cache and return empty array
     if (!results || !Array.isArray(results)) {
+      if (this.cacheEnabled) {
+        this.queryCache.set(queryKey, {
+          result: [],
+          timestamp: Date.now(),
+        });
+      }
       return [];
     }
 
     // Wrap all results with proxies for change tracking
-    return this.proxyManager.wrapQueryResults(results, tableInstance);
+    const wrappedResults = this.proxyManager.wrapQueryResults(results, tableInstance);
+
+    // Cache the wrapped results
+    if (this.cacheEnabled) {
+      this.queryCache.set(queryKey, {
+        result: wrappedResults,
+        timestamp: Date.now(),
+      });
+    }
+
+    return wrappedResults;
   }
 
   private create(table: string, data: any) {
@@ -331,5 +401,6 @@ export class UnitOfWork<
     this.identityMap.clear();
     this.proxyManager.clearCache();
     this.checkpointManager.clearCheckpoints();
+    this.queryCache.clear();
   }
 }
