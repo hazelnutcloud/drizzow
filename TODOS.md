@@ -1,5 +1,5 @@
 - [ ] Always include primary key in queries
-- [ ] Implement findFirst and findMany caching by serializing query params to use as cache key
 - [ ] Only track columns that are in the table
 - [ ] Handle nested objects change detection correctly. This can happen for two scenarios: a relation to another table or a json column
+- [x] Implement findFirst and findMany caching by serializing query params to use as cache key
 - [x] Implement checkpoints properly
