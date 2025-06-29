@@ -1,13 +1,13 @@
 import type {
   ExtractTablesWithRelations,
+  GetColumnData,
   InferInsertModel,
-  InferModelFromColumns,
   InferSelectModel,
   Table,
+  TableRelationalConfig,
   TablesRelationalConfig,
 } from "drizzle-orm";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
-import type { RelationalQueryBuilder as SqliteRelationalQueryBuilder } from "drizzle-orm/sqlite-core/query-builders/query";
 
 /**
  * Entity states for change tracking
@@ -61,38 +61,36 @@ export interface Checkpoint {
  * Supported Drizzle database types
  */
 export type AnyDrizzleDB<
-  TSchema extends Record<string, any> = Record<string, any>
+  TSchema extends Record<string, any> = Record<string, any>,
 > = BaseSQLiteDatabase<any, any, TSchema>;
 
-export type ExtractSchema<TDatabase> = TDatabase extends AnyDrizzleDB<
-  infer TSchema
->
-  ? TSchema
-  : never;
+export type ExtractSchema<TDatabase> =
+  TDatabase extends AnyDrizzleDB<infer TSchema> ? TSchema : never;
+
+export type FindParams<TTable extends TableRelationalConfig> = {
+  [Col in keyof TTable["columns"] as TTable["columns"][Col]["_"]["isPrimaryKey"] extends true
+    ? Col
+    : never]: GetColumnData<TTable["columns"][Col], "raw">;
+};
 
 export type UnitOfWorkRepos<
   TDatabase extends AnyDrizzleDB,
   TFullSchema extends Record<string, Table> = ExtractSchema<TDatabase>,
-  TSchema extends TablesRelationalConfig = ExtractTablesWithRelations<TFullSchema>
+  TSchema extends
+    TablesRelationalConfig = ExtractTablesWithRelations<TFullSchema>,
 > = {} extends TSchema
   ? {}
-  : TDatabase extends BaseSQLiteDatabase<infer mode, any, TFullSchema>
-  ? {
+  : {
       [K in keyof TSchema]: K extends keyof TFullSchema
-        ? SqliteRelationalQueryBuilder<
-            mode,
-            TFullSchema,
-            TSchema,
-            TSchema[K]
-          > & {
+        ? {
+            find: (params: FindParams<TSchema[K]>) => {};
             create: (
-              v: InferInsertModel<TFullSchema[K]>
+              v: InferInsertModel<TFullSchema[K]>,
             ) => InferSelectModel<TFullSchema[K]>;
             delete: (v: InferSelectModel<TFullSchema[K]>) => void;
           }
         : {};
-    }
-  : never;
+    };
 
 /**
  * Database adapter interface
@@ -103,7 +101,7 @@ export interface DatabaseAdapter {
   executeUpdate(
     table: Table,
     id: any,
-    changes: Record<string, any>
+    changes: Record<string, any>,
   ): Promise<void>;
   executeDelete(table: Table, id: any): Promise<void>;
   commitTransaction(tx: any): Promise<void>;

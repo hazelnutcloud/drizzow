@@ -17,7 +17,7 @@ export class ProxyManager {
   constructor(
     changeTracker: ChangeTracker,
     identityMap: IdentityMap,
-    adapter: BaseDatabaseAdapter
+    adapter: BaseDatabaseAdapter,
   ) {
     this.changeTracker = changeTracker;
     this.identityMap = identityMap;
@@ -43,7 +43,7 @@ export class ProxyManager {
         target: any,
         property: string | symbol,
         value: any,
-        receiver: any
+        receiver: any,
       ) => {
         if (typeof property === "symbol") {
           // Allow symbol properties to pass through
@@ -60,11 +60,7 @@ export class ProxyManager {
         if (this.changeTracker.isTracked(receiver)) {
           // Only track if the value actually changed
           if (!this.deepEqual(oldValue, value)) {
-            this.changeTracker.markModified(
-              receiver,
-              property,
-              oldValue
-            );
+            this.changeTracker.markModified(receiver, property, oldValue);
           }
         }
 
@@ -92,7 +88,7 @@ export class ProxyManager {
             value,
             target,
             property as string,
-            table
+            table,
           );
         }
 
@@ -120,9 +116,11 @@ export class ProxyManager {
   /**
    * Wrap query results with proxies
    */
-  wrapQueryResults<T>(results: T | T[], table: Table): T | T[] {
+  wrapQueryResults<T>(results: T, table: Table): T {
     if (Array.isArray(results)) {
-      return results.map((entity) => this.wrapSingleResult(entity, table));
+      return results.map((entity) =>
+        this.wrapSingleResult(entity, table),
+      ) as never;
     } else {
       return this.wrapSingleResult(results, table);
     }
@@ -163,7 +161,7 @@ export class ProxyManager {
     value: any,
     parent: any,
     parentProperty: string,
-    table: Table
+    table: Table,
   ): any {
     // Return existing proxy if already cached
     if (this.proxyCache.has(value)) {
@@ -179,7 +177,7 @@ export class ProxyManager {
         target: any,
         property: string | symbol,
         newValue: any,
-        receiver: any
+        receiver: any,
       ) => {
         if (typeof property === "symbol") {
           return Reflect.set(target, property, newValue, receiver);
@@ -196,7 +194,7 @@ export class ProxyManager {
             this.changeTracker.markModified(
               parent,
               parentProperty,
-              parent[parentProperty]
+              parent[parentProperty],
             );
           }
         }
@@ -224,7 +222,7 @@ export class ProxyManager {
             propValue,
             parent,
             parentProperty,
-            table
+            table,
           );
         }
 

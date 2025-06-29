@@ -13,6 +13,7 @@ import type { BaseDatabaseAdapter } from "./base-adapter";
 import {
   aliasedTableColumn,
   getOperators,
+  inArray,
   sql,
   type DBQueryConfig,
   type Table,
@@ -23,7 +24,7 @@ import {
  */
 export class UnitOfWork<
   TDatabase extends AnyDrizzleDB,
-  TSchema extends Record<string, any> = ExtractSchema<TDatabase>
+  TSchema extends Record<string, any> = ExtractSchema<TDatabase>,
 > {
   private db: TDatabase;
   private schema: TSchema;
@@ -39,7 +40,7 @@ export class UnitOfWork<
   constructor(
     db: TDatabase,
     adapter: BaseDatabaseAdapter,
-    options?: { cacheEnabled?: boolean; cacheTTL?: number }
+    options?: { cacheEnabled?: boolean; cacheTTL?: number },
   ) {
     this.db = db;
     this.schema = db._.fullSchema as never;
@@ -56,23 +57,73 @@ export class UnitOfWork<
     this.proxyManager = new ProxyManager(
       this.changeTracker,
       this.identityMap,
-      adapter
+      adapter,
     );
     this.checkpointManager = new CheckpointManager(
       this.changeTracker,
-      this.identityMap
+      this.identityMap,
     );
 
     for (const key of Object.keys(db.query)) {
       (this as any)[key] = {
-        findFirst: (config: DBQueryConfig<"many", true>) =>
-          this.findFirst(key, config),
-        findMany: (config: DBQueryConfig<"many", true>) =>
-          this.findMany(key, config),
+        find: (param: any) => this.find(key, param),
         create: (data: any) => this.create(key, data),
         delete: (entity: any) => this.deleteEntity(key, entity),
       };
     }
+  }
+
+  private async find(table: string, param: { [pk: string]: any }) {
+    const paramValues = Object.values(param);
+    if (paramValues.length > 1) {
+      throw new Error("More than 1 primary key supplied");
+    }
+    const pkValue = paramValues[0];
+    if (pkValue === undefined || pkValue === null) {
+      throw new Error("Primary key cannot be null or undefined");
+    }
+
+    let pksToQuery = [];
+    let results = [];
+
+    const isMany = Array.isArray(pkValue);
+
+    if (isMany) {
+      const cache = this.identityMap.getMany(table, pkValue);
+      if (cache === undefined) {
+        pksToQuery = pkValue;
+      } else {
+        const { found, missing } = cache;
+        results = found;
+        pksToQuery = missing;
+      }
+    } else {
+      const cache = this.identityMap.get(table, pkValue);
+      if (cache === undefined) {
+        pksToQuery = [pkValue];
+      } else {
+        results = [cache];
+      }
+    }
+
+    if (pksToQuery.length > 0) {
+      const fetched = await this.db.query[table]?.findMany({
+        where: inArray(this.schema[table]!, pksToQuery),
+      });
+      if (fetched !== undefined && fetched.length > 0) {
+        const wrapped = this.proxyManager.wrapQueryResults(
+          fetched,
+          this.schema[table],
+        );
+        results.push(...wrapped);
+      }
+    }
+
+    if (isMany) {
+      return results;
+    }
+
+    return results[0];
   }
 
   private async findFirst(table: string, config: DBQueryConfig<"many", true>) {
@@ -114,7 +165,10 @@ export class UnitOfWork<
     }
 
     // Wrap the result with proxy for change tracking
-    const wrappedResult = this.proxyManager.wrapQueryResults(result, tableInstance);
+    const wrappedResult = this.proxyManager.wrapQueryResults(
+      result,
+      tableInstance,
+    );
 
     // Cache the wrapped result
     if (this.cacheEnabled) {
@@ -172,7 +226,10 @@ export class UnitOfWork<
     }
 
     // Wrap all results with proxies for change tracking
-    const wrappedResults = this.proxyManager.wrapQueryResults(results, tableInstance);
+    const wrappedResults = this.proxyManager.wrapQueryResults(
+      results,
+      tableInstance,
+    );
 
     // Cache the wrapped results
     if (this.cacheEnabled) {
@@ -198,14 +255,14 @@ export class UnitOfWork<
     // Check if the entity already has a primary key
     const primaryKey = this.adapter.extractPrimaryKeyValue(
       tableInstance,
-      entity
+      entity,
     );
 
     // Require primary key for create operations
     if (primaryKey === null || primaryKey === undefined) {
       throw new Error(
         `Cannot create entity in table '${table}' without providing a primary key. ` +
-          `Please provide all primary key fields when creating new entities.`
+          `Please provide all primary key fields when creating new entities.`,
       );
     }
 
@@ -228,7 +285,7 @@ export class UnitOfWork<
     // Check if the entity is being tracked
     if (!this.changeTracker.isTracked(entity)) {
       throw new Error(
-        `Cannot delete untracked entity. Entity must be loaded through UnitOfWork or created with create().`
+        `Cannot delete untracked entity. Entity must be loaded through UnitOfWork or created with create().`,
       );
     }
 
@@ -312,14 +369,14 @@ export class UnitOfWork<
           if (tracked && checkpointTracked) {
             // Update original values to the checkpoint state (what was saved)
             for (const [property, value] of Object.entries(
-              checkpointTracked.entity
+              checkpointTracked.entity,
             )) {
               tracked.originalValues.set(property, value);
             }
             // Mark this entity as having persisted original values
             this.changeTracker.markOriginalValuesAsPersisted(
               changeSet.entity,
-              tracked.originalValues
+              tracked.originalValues,
             );
             // Recompute the state based on current vs new original values
             let hasChanges = false;
@@ -344,7 +401,7 @@ export class UnitOfWork<
       throw new Error(
         `Failed to save changes: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     }
   }

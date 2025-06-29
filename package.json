@@ -7,11 +7,11 @@
     "bench:gc": "bun --expose-gc run benchmarks/benchmarks.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "^1.2.17",
     "mitata": "^1.0.34"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.8.3"
   },
   "dependencies": {
     "drizzle-orm": "^0.44.2"

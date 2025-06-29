@@ -4,14 +4,14 @@
     "": {
       "name": "drizzle-uow",
       "dependencies": {
-        "drizzle-orm": "^0.44.2",
+        "drizzle-orm": "latest",
       },
       "devDependencies": {
         "@types/bun": "latest",
-        "mitata": "^1.0.34",
+        "mitata": "latest",
       },
       "peerDependencies": {
-        "typescript": "^5",
+        "typescript": "latest",
       },
     },
   },

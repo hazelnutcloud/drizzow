@@ -1,12 +1,10 @@
-import {
-  type BaseSQLiteDatabase,
-} from "drizzle-orm/sqlite-core";
 import { UnitOfWork } from "../uow";
 import type { UnitOfWorkRepos } from "../types";
 import { BunSQLiteAdapter } from "./adapter";
+import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
 export type CreateUowReturnType<
-  TDatabase extends BaseSQLiteDatabase<any, any, any>
+  TDatabase extends BaseSQLiteDatabase<any, any, any>,
 > = UnitOfWork<TDatabase> & UnitOfWorkRepos<TDatabase>;
 
 /**
@@ -14,7 +12,7 @@ export type CreateUowReturnType<
  */
 export function createUow<TDatabase extends BaseSQLiteDatabase<any, any, any>>(
   db: TDatabase,
-  options?: { cacheEnabled?: boolean; cacheTTL?: number }
+  options?: { cacheEnabled?: boolean; cacheTTL?: number },
 ): CreateUowReturnType<TDatabase> {
   const adapter = new BunSQLiteAdapter(db);
   // Create the UoW instance

@@ -1,5 +1,3 @@
-import type { Table } from "drizzle-orm";
-
 /**
  * Identity Map implementation for ensuring entity uniqueness
  */
@@ -12,9 +10,37 @@ export class IdentityMap {
   get(tableName: string, primaryKey: any): any | undefined {
     const tableMap = this.entities.get(tableName);
     if (!tableMap) return undefined;
-    
+
     const key = this.serializeKey(primaryKey);
     return tableMap.get(key);
+  }
+
+  getMany(
+    tableName: string,
+    primaryKeys: any[],
+  ): { found: any[]; missing: any[] } | undefined {
+    const tableMap = this.entities.get(tableName);
+
+    if (!tableMap) return undefined;
+
+    const missings = [];
+    const founds = [];
+
+    for (const primaryKey of primaryKeys) {
+      const key = this.serializeKey(primaryKey);
+      const found = tableMap.get(key);
+
+      if (found) {
+        founds.push(found);
+      } else {
+        missings.push(primaryKey);
+      }
+    }
+
+    return {
+      missing: missings,
+      found: founds,
+    };
   }
 
   /**
@@ -24,7 +50,7 @@ export class IdentityMap {
     if (!this.entities.has(tableName)) {
       this.entities.set(tableName, new Map());
     }
-    
+
     const tableMap = this.entities.get(tableName)!;
     const key = this.serializeKey(primaryKey);
     tableMap.set(key, entity);
@@ -36,7 +62,7 @@ export class IdentityMap {
   remove(tableName: string, primaryKey: any): void {
     const tableMap = this.entities.get(tableName);
     if (!tableMap) return;
-    
+
     const key = this.serializeKey(primaryKey);
     tableMap.delete(key);
   }
@@ -47,7 +73,7 @@ export class IdentityMap {
   has(tableName: string, primaryKey: any): boolean {
     const tableMap = this.entities.get(tableName);
     if (!tableMap) return false;
-    
+
     const key = this.serializeKey(primaryKey);
     return tableMap.has(key);
   }
@@ -72,7 +98,7 @@ export class IdentityMap {
   getAllForTable(tableName: string): any[] {
     const tableMap = this.entities.get(tableName);
     if (!tableMap) return [];
-    
+
     return Array.from(tableMap.values());
   }
 
@@ -81,7 +107,7 @@ export class IdentityMap {
    */
   createSnapshot(): Map<string, Map<string, any>> {
     const snapshot = new Map<string, Map<string, any>>();
-    
+
     for (const [tableName, tableMap] of this.entities) {
       const tableSnapshot = new Map<string, any>();
       for (const [key, entity] of tableMap) {
@@ -90,7 +116,7 @@ export class IdentityMap {
       }
       snapshot.set(tableName, tableSnapshot);
     }
-    
+
     return snapshot;
   }
 
@@ -99,7 +125,7 @@ export class IdentityMap {
    */
   restoreFromSnapshot(snapshot: Map<string, Map<string, any>>): void {
     this.entities.clear();
-    
+
     for (const [tableName, tableMap] of snapshot) {
       const restoredTableMap = new Map<string, any>();
       for (const [key, entity] of tableMap) {
@@ -117,12 +143,12 @@ export class IdentityMap {
     if (key === null || key === undefined) {
       throw new Error("Primary key cannot be null or undefined");
     }
-    
+
     if (Array.isArray(key)) {
       // Composite key
       return JSON.stringify(key);
     }
-    
+
     // Single key
     return String(key);
   }
@@ -134,22 +160,22 @@ export class IdentityMap {
     if (obj === null || typeof obj !== "object") {
       return obj;
     }
-    
+
     if (obj instanceof Date) {
       return new Date(obj.getTime());
     }
-    
+
     if (Array.isArray(obj)) {
-      return obj.map(item => this.deepClone(item));
+      return obj.map((item) => this.deepClone(item));
     }
-    
+
     const cloned: any = {};
     for (const key in obj) {
       if (obj.hasOwnProperty(key)) {
         cloned[key] = this.deepClone(obj[key]);
       }
     }
-    
+
     return cloned;
   }
 }
