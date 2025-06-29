@@ -1,7 +1,9 @@
-- [ ] Refactor query API to only be able to filter using primary key
-- [ ] Refactor cache to look for entities in identity map using user-provided filter
-- [ ] Always include primary key in queries
-- [ ] Only track columns that are in the table
-- [ ] Handle nested objects change detection correctly. This can happen for two scenarios: a relation to another table or a json column
+- [x] Refactor query API to only be able to filter using primary key
+- [x] ~~Refactor cache to look for entities in identity map using user-provided filter~~
+- [x] ~~Always include primary key in queries~~
+- [x] ~~Only track columns that are in the table~~
 - [x] Implement findFirst and findMany caching by serializing query params to use as cache key
 - [x] Implement checkpoints properly
+- [ ] Update tests for new find() API
+- [ ] Support relations in find()
+- [ ] Handle nested objects change detection correctly. This can happen for two scenarios: a relation to another table or a json column

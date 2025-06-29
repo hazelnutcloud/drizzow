@@ -70,8 +70,16 @@ export type ExtractSchema<TDatabase> =
 export type FindParams<TTable extends TableRelationalConfig> = {
   [Col in keyof TTable["columns"] as TTable["columns"][Col]["_"]["isPrimaryKey"] extends true
     ? Col
-    : never]: GetColumnData<TTable["columns"][Col], "raw">;
+    : never]:
+    | GetColumnData<TTable["columns"][Col], "raw">
+    | GetColumnData<TTable["columns"][Col], "raw">[];
 };
+
+export type FindReturnType<Params, TTable extends Table> = Params extends {
+  [key: string]: any[];
+}
+  ? InferSelectModel<TTable>[]
+  : InferSelectModel<TTable> | undefined;
 
 export type UnitOfWorkRepos<
   TDatabase extends AnyDrizzleDB,
@@ -83,7 +91,9 @@ export type UnitOfWorkRepos<
   : {
       [K in keyof TSchema]: K extends keyof TFullSchema
         ? {
-            find: (params: FindParams<TSchema[K]>) => {};
+            find: <Params = FindParams<TSchema[K]>>(
+              params: Params,
+            ) => Promise<FindReturnType<Params, TFullSchema[K]>>;
             create: (
               v: InferInsertModel<TFullSchema[K]>,
             ) => InferSelectModel<TFullSchema[K]>;
