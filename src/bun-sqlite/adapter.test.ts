@@ -3,7 +3,11 @@ import { getTableConfig } from "drizzle-orm/sqlite-core";
 
 import { BunSQLiteAdapter } from "./adapter";
 import { EntityState } from "../types";
-import { TestDatabase, createTestUser, users } from "../uow.test";
+import { TestDatabase, users } from "../uow.test";
+
+function createTestUser(id: number, username: string, email?: string) {
+  return { id, username, email: email || `${username}@example.com` };
+}
 
 describe("SQLite Adapter", () => {
   let testDb: TestDatabase;
@@ -37,7 +41,7 @@ describe("SQLite Adapter", () => {
 
   test("should handle unknown table names", () => {
     expect(() => (adapter as any).getTableFromName("unknown")).toThrow(
-      "Table 'unknown' not found in schema"
+      "Table 'unknown' not found in schema",
     );
   });
 

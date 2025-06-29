@@ -3,7 +3,11 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { IdentityMap } from "./identity-map";
 import { ChangeTracker } from "./change-tracker";
 import { CheckpointManager } from "./checkpoint-manager";
-import { createTestUser, TestDatabase, users } from "./uow.test";
+import { TestDatabase, users } from "./uow.test";
+
+export function createTestUser(id: number, username: string, email?: string) {
+  return { id, username, email: email || `${username}@example.com` };
+}
 
 describe("Checkpoint Manager", () => {
   let checkpointManager: CheckpointManager;

@@ -3,7 +3,11 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { IdentityMap } from "./identity-map";
 import { ChangeTracker } from "./change-tracker";
 import { EntityState } from "./types";
-import { createTestUser, TestDatabase, users } from "./uow.test";
+import { TestDatabase, users } from "./uow.test";
+
+function createTestUser(id: number, username: string, email?: string) {
+  return { id, username, email: email || `${username}@example.com` };
+}
 
 describe("Change Tracker", () => {
   let changeTracker: ChangeTracker;
@@ -140,10 +144,10 @@ describe("Change Tracker", () => {
 
   test("should handle invalid operations", () => {
     expect(() => changeTracker.markModified(testUser, "prop", "old")).toThrow(
-      "Cannot modify untracked entity"
+      "Cannot modify untracked entity",
     );
     expect(() => changeTracker.markDeleted(testUser)).toThrow(
-      "Cannot delete untracked entity"
+      "Cannot delete untracked entity",
     );
   });
 });

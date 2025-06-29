@@ -107,8 +107,16 @@ export class UnitOfWork<
     }
 
     if (pksToQuery.length > 0) {
+      // Get the primary key column from the table schema
+      const tableSchema = this.schema[table]!;
+      const pkColumn = this.adapter.getPrimaryKeyColumn(tableSchema);
+
+      if (!pkColumn) {
+        throw new Error(`No primary key found for table ${table}`);
+      }
+
       const fetched = await this.db.query[table]?.findMany({
-        where: inArray(this.schema[table]!, pksToQuery),
+        where: inArray(pkColumn, pksToQuery),
       });
       if (fetched !== undefined && fetched.length > 0) {
         const wrapped = this.proxyManager.wrapQueryResults(
@@ -119,127 +127,16 @@ export class UnitOfWork<
       }
     }
 
+    results = results.filter((entity) => {
+      const state = this.changeTracker.getState(entity)!;
+      return state !== EntityState.Deleted;
+    });
+
     if (isMany) {
       return results;
     }
 
     return results[0];
-  }
-
-  private async findFirst(table: string, config: DBQueryConfig<"many", true>) {
-    const queryKey = this.adapter.serializeQuery(table, config);
-
-    // Check cache if enabled
-    if (this.cacheEnabled) {
-      const cached = this.queryCache.get(queryKey);
-      if (cached) {
-        const now = Date.now();
-        if (now - cached.timestamp < this.cacheTTL) {
-          // Return cached result if still valid
-          return cached.result;
-        } else {
-          // Remove expired cache entry
-          this.queryCache.delete(queryKey);
-        }
-      }
-    }
-
-    // Get the table instance from schema
-    const tableInstance = this.schema[table]!;
-
-    // Get the query builder for this table
-    const queryBuilder = (this.db.query as any)[table]!;
-
-    // Execute the query using Drizzle's relational query builder
-    const result = await queryBuilder.findFirst(config);
-
-    // If no result found, cache and return undefined
-    if (!result) {
-      if (this.cacheEnabled) {
-        this.queryCache.set(queryKey, {
-          result: undefined,
-          timestamp: Date.now(),
-        });
-      }
-      return undefined;
-    }
-
-    // Wrap the result with proxy for change tracking
-    const wrappedResult = this.proxyManager.wrapQueryResults(
-      result,
-      tableInstance,
-    );
-
-    // Cache the wrapped result
-    if (this.cacheEnabled) {
-      this.queryCache.set(queryKey, {
-        result: wrappedResult,
-        timestamp: Date.now(),
-      });
-    }
-
-    return wrappedResult;
-  }
-
-  private async findMany(table: string, config: DBQueryConfig<"many", true>) {
-    const queryKey = this.adapter.serializeQuery(table, config);
-
-    // Check cache if enabled
-    if (this.cacheEnabled) {
-      const cached = this.queryCache.get(queryKey);
-      if (cached) {
-        const now = Date.now();
-        if (now - cached.timestamp < this.cacheTTL) {
-          // Return cached result if still valid
-          return cached.result;
-        } else {
-          // Remove expired cache entry
-          this.queryCache.delete(queryKey);
-        }
-      }
-    }
-
-    // Get the table instance from schema
-    const tableInstance = this.schema[table];
-    if (!tableInstance) {
-      throw new Error(`Table '${table}' not found in schema`);
-    }
-
-    // Get the query builder for this table
-    const queryBuilder = (this.db.query as any)[table];
-    if (!queryBuilder) {
-      throw new Error(`Query builder for table '${table}' not found`);
-    }
-
-    // Execute the query using Drizzle's relational query builder
-    const results = await queryBuilder.findMany(config);
-
-    // If no results found, cache and return empty array
-    if (!results || !Array.isArray(results)) {
-      if (this.cacheEnabled) {
-        this.queryCache.set(queryKey, {
-          result: [],
-          timestamp: Date.now(),
-        });
-      }
-      return [];
-    }
-
-    // Wrap all results with proxies for change tracking
-    const wrappedResults = this.proxyManager.wrapQueryResults(
-      results,
-      tableInstance,
-    );
-
-    // Cache the wrapped results
-    if (this.cacheEnabled) {
-      this.queryCache.set(queryKey, {
-        result: wrappedResults,
-        timestamp: Date.now(),
-      });
-    }
-
-    return wrappedResults;
   }
 
   private create(table: string, data: any) {
@@ -264,6 +161,14 @@ export class UnitOfWork<
         `Cannot create entity in table '${table}' without providing a primary key. ` +
           `Please provide all primary key fields when creating new entities.`,
       );
+    }
+
+    const existing = this.identityMap.get(table, primaryKey);
+    if (existing) {
+      const state = this.changeTracker.getState(existing);
+      if (state !== EntityState.Deleted) {
+        throw new Error(`Entity with primary key ${primaryKey} already exists`);
+      }
     }
 
     // Create a proxy for the entity and mark it as added
@@ -320,7 +225,8 @@ export class UnitOfWork<
         // Check if this entity is still being tracked
         const currentTracked = this.changeTracker.getTrackedEntity(entity);
         if (!currentTracked) continue;
-        // If the entity was modified at the checkpoint, include it
+
+        // Handle different entity states at checkpoint
         if (checkpointTracked.state === EntityState.Modified) {
           const changeSet = {
             entity: entity,
@@ -346,6 +252,24 @@ export class UnitOfWork<
           if (changeSet.changes.size > 0) {
             changeSets.push(changeSet);
           }
+        } else if (checkpointTracked.state === EntityState.Added) {
+          // Handle entities that were created before the checkpoint
+          const changeSet = {
+            entity: entity,
+            state: checkpointTracked.state,
+            changes: new Map(),
+            tableName: checkpointTracked.tableName,
+          };
+          changeSets.push(changeSet);
+        } else if (checkpointTracked.state === EntityState.Deleted) {
+          // Handle entities that were deleted before the checkpoint
+          const changeSet = {
+            entity: entity,
+            state: checkpointTracked.state,
+            changes: new Map(),
+            tableName: checkpointTracked.tableName,
+          };
+          changeSets.push(changeSet);
         }
       }
     } else {

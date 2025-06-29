@@ -4,8 +4,11 @@ import { IdentityMap } from "./identity-map";
 import { ChangeTracker } from "./change-tracker";
 import { ProxyManager } from "./proxy";
 import { EntityState } from "./types";
-import { createTestUser, TestDatabase, users } from "./uow.test";
-import type { SQLiteAdapter } from "./bun-sqlite/adapter";
+import { TestDatabase, users } from "./uow.test";
+
+export function createTestUser(id: number, username: string, email?: string) {
+  return { id, username, email: email || `${username}@example.com` };
+}
 
 describe("Proxy Manager", () => {
   let proxyManager: ProxyManager;
@@ -21,7 +24,7 @@ describe("Proxy Manager", () => {
     proxyManager = new ProxyManager(
       changeTracker,
       identityMap,
-      testDb.getAdapter()
+      testDb.getAdapter(),
     );
     testUser = createTestUser(1, "alice");
   });
@@ -84,7 +87,7 @@ describe("Proxy Manager", () => {
     const wrapped1 = proxyManager.wrapQueryResults(testUser, users);
     const wrapped2 = proxyManager.wrapQueryResults(
       createTestUser(1, "alice"),
-      users
+      users,
     );
 
     expect(wrapped1).toBe(wrapped2); // Same reference due to identity map

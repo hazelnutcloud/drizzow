@@ -2,6 +2,7 @@ import { getTableName, type Table } from "drizzle-orm";
 import { ChangeTracker } from "./change-tracker";
 import { IdentityMap } from "./identity-map";
 import type { BaseDatabaseAdapter } from "./base-adapter";
+import { EntityState } from "./types";
 
 declare const window: any;
 
@@ -52,12 +53,19 @@ export class ProxyManager {
 
         const oldValue = target[property];
 
-        // Set the new value first
+        const state = this.changeTracker.getState(receiver);
+
+        if (state === EntityState.Deleted) {
+          return false;
+        } // Set the new value first
+
         const result = Reflect.set(target, property, value, receiver);
+
+        if (!result) return result;
 
         // Track the change if the entity is being tracked
         // Note: We track the proxy (receiver), not the target
-        if (this.changeTracker.isTracked(receiver)) {
+        if (state !== undefined) {
           // Only track if the value actually changed
           if (!this.deepEqual(oldValue, value)) {
             this.changeTracker.markModified(receiver, property, oldValue);

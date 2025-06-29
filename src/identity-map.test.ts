@@ -1,17 +1,25 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 
 import { IdentityMap } from "../src/identity-map";
-import {
-  createTestPost,
-  createTestUser,
-  TestDatabase,
-  users,
-} from "./uow.test";
-import type { SQLiteAdapter } from "./bun-sqlite/adapter";
+import { TestDatabase, users } from "./uow.test";
+import type { BunSQLiteAdapter } from "./bun-sqlite/adapter";
+
+function createTestUser(id: number, username: string, email?: string) {
+  return { id, username, email: email || `${username}@example.com` };
+}
+
+function createTestPost(
+  id: number,
+  title: string,
+  content: string,
+  userId: number,
+) {
+  return { id, title, content, userId };
+}
 
 describe("Identity Map", () => {
   let identityMap: IdentityMap;
-  let adapter: SQLiteAdapter;
+  let adapter: BunSQLiteAdapter;
   let testUser: any;
 
   beforeEach(() => {
@@ -122,10 +130,5 @@ describe("Identity Map", () => {
   test("should extract primary key from table schema", () => {
     const primaryKey = adapter.extractPrimaryKeyValue(users, testUser);
     expect(primaryKey).toBe(1);
-  });
-
-  test("should get table name", () => {
-    const tableName = identityMap.getTableName(users);
-    expect(tableName).toBe("users");
   });
 });

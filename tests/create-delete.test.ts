@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import { createUow, type CreateUowReturnType } from "./bun-sqlite";
+import { createUow, type CreateUowReturnType } from "../src/bun-sqlite";
 import { eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
@@ -128,14 +128,13 @@ describe("Create and Delete Operations", () => {
   describe("Delete Operations", () => {
     it("should delete an existing entity", async () => {
       // Insert a user directly
-      await db
+      const insertResult = await db
         .insert(schema.users)
-        .values({ username: "toDelete", email: "delete@example.com" });
+        .values({ username: "toDelete", email: "delete@example.com" })
+        .returning();
 
-      // Load the user through UoW
-      const user = await uow.users.findFirst({
-        where: eq(schema.users.username, "toDelete"),
-      });
+      // Load the user through UoW using the ID
+      const user = await uow.users.find({ id: insertResult[0]!.id });
 
       expect(user).toBeDefined();
 
@@ -164,7 +163,7 @@ describe("Create and Delete Operations", () => {
 
       // Attempt to delete should throw
       expect(() => uow.users.delete(untrackedUser)).toThrow(
-        "Cannot delete untracked entity"
+        "Cannot delete untracked entity",
       );
     });
 
@@ -193,16 +192,18 @@ describe("Create and Delete Operations", () => {
 
     it("should handle multiple deletes", async () => {
       // Insert multiple users
-      await db
+      const insertResults = await db
         .insert(schema.users)
         .values([
           { username: "user1" },
           { username: "user2" },
           { username: "user3" },
-        ]);
+        ])
+        .returning();
 
-      // Load all users through UoW
-      const users = await uow.users.findMany();
+      // Load all users through UoW using their IDs
+      const userIds = insertResults.map((u) => u.id);
+      const users = await uow.users.find({ id: userIds });
       expect(users.length).toBe(3);
 
       // Delete all users
@@ -220,12 +221,14 @@ describe("Create and Delete Operations", () => {
   describe("Mixed Create and Delete Operations", () => {
     it("should handle creates and deletes in same transaction", async () => {
       // Insert some initial data
-      await db
+      const insertResults = await db
         .insert(schema.users)
-        .values([{ username: "existing1" }, { username: "existing2" }]);
+        .values([{ username: "existing1" }, { username: "existing2" }])
+        .returning();
 
-      // Load existing users
-      const existingUsers = await uow.users.findMany();
+      // Load existing users using their IDs
+      const userIds = insertResults.map((u) => u.id);
+      const existingUsers = await uow.users.find({ id: userIds });
 
       // Delete one existing user
       uow.users.delete(existingUsers[0]!);

@@ -24,7 +24,7 @@ function generateAddress(index: number): string {
 
 function generateTransferEvents(
   count: number,
-  uniqueAddresses: number
+  uniqueAddresses: number,
 ): TransferEvent[] {
   const events: TransferEvent[] = [];
 
@@ -58,31 +58,22 @@ function setupDatabase() {
 // UoW implementation
 async function uowIndexing(
   db: BunSQLiteDatabase<{ accounts: typeof accounts }>,
-  events: TransferEvent[]
+  events: TransferEvent[],
 ) {
   const uow = createUow(db);
-
-  // Track accounts we've already seen in this batch
-  const seenAccounts = new Map<string, typeof accounts.$inferSelect>();
 
   for (const event of events) {
     // Handle sender (from)
     if (event.from !== "0x0000000000000000000000000000000000000000") {
-      let sender = seenAccounts.get(event.from);
+      let sender = await uow.accounts.find({
+        address: event.from,
+      });
 
       if (!sender) {
-        sender = await uow.accounts.findFirst({
-          where: eq(accounts.address, event.from),
+        sender = uow.accounts.create({
+          address: event.from,
+          balance: 0,
         });
-
-        if (!sender) {
-          sender = uow.accounts.create({
-            address: event.from,
-            balance: 0,
-          });
-        }
-
-        seenAccounts.set(event.from, sender);
       }
 
       sender.balance -= event.value;
@@ -90,21 +81,15 @@ async function uowIndexing(
 
     // Handle receiver (to)
     if (event.to !== "0x0000000000000000000000000000000000000000") {
-      let receiver = seenAccounts.get(event.to);
+      let receiver = await uow.accounts.find({
+        address: event.to,
+      });
 
       if (!receiver) {
-        receiver = await uow.accounts.findFirst({
-          where: eq(accounts.address, event.to),
+        receiver = uow.accounts.create({
+          address: event.to,
+          balance: 0,
         });
-
-        if (!receiver) {
-          receiver = uow.accounts.create({
-            address: event.to,
-            balance: 0,
-          });
-        }
-
-        seenAccounts.set(event.to, receiver);
       }
 
       receiver.balance += event.value;
@@ -117,7 +102,7 @@ async function uowIndexing(
 // Vanilla implementation (similar to their ERC20 indexer)
 async function vanillaIndexing(
   db: BunSQLiteDatabase<{ accounts: typeof accounts }>,
-  events: TransferEvent[]
+  events: TransferEvent[],
 ) {
   // Process each event individually like Ponder does
   for (const event of events) {
@@ -167,7 +152,7 @@ boxplot(() => {
           const { db } = setupDatabase();
           await uowIndexing(db, events);
         };
-      }
+      },
     ).args({ events: [100, 500, 1000], addresses: [200, 500, 1000] });
 
     bench(
@@ -181,7 +166,7 @@ boxplot(() => {
           const { db } = setupDatabase();
           await vanillaIndexing(db, events);
         };
-      }
+      },
     ).args({ events: [100, 500, 1000], addresses: [200, 500, 1000] });
   });
 });

@@ -4,6 +4,7 @@
 - [x] ~~Only track columns that are in the table~~
 - [x] Implement findFirst and findMany caching by serializing query params to use as cache key
 - [x] Implement checkpoints properly
+- [ ] Refactor uow.save() to properly handle creates and deletes
 - [ ] Update tests for new find() API
 - [ ] Support relations in find()
 - [ ] Handle nested objects change detection correctly. This can happen for two scenarios: a relation to another table or a json column

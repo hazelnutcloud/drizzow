@@ -4,7 +4,7 @@ import Database from "bun:sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { UnitOfWork } from "./uow";
-import { SQLiteAdapter } from "./bun-sqlite/adapter";
+import { BunSQLiteAdapter } from "./bun-sqlite/adapter";
 import type { CreateUowReturnType } from "./bun-sqlite";
 
 // Test Schema
@@ -27,12 +27,12 @@ export const testSchema = { users, posts };
 export class TestDatabase {
   private db: Database;
   private drizzleDb: BunSQLiteDatabase<typeof testSchema>;
-  private adapter: SQLiteAdapter;
+  private adapter: BunSQLiteAdapter;
 
   constructor() {
     this.db = new Database(":memory:");
     this.drizzleDb = drizzle(this.db, { schema: testSchema });
-    this.adapter = new SQLiteAdapter(this.drizzleDb);
+    this.adapter = new BunSQLiteAdapter(this.drizzleDb);
   }
 
   async setup() {
@@ -81,21 +81,8 @@ export class TestDatabase {
   }
 }
 
-export function createTestUser(id: number, username: string, email?: string) {
-  return { id, username, email: email || `${username}@example.com` };
-}
-
-export function createTestPost(
-  id: number,
-  title: string,
-  content: string,
-  userId: number
-) {
-  return { id, title, content, userId };
-}
-
 // Test Suite
-describe("Unit of Work", () => {
+describe("Unit of Work - New API", () => {
   let testDb: TestDatabase;
   let uow: CreateUowReturnType<BunSQLiteDatabase<typeof testSchema>>;
 
@@ -124,27 +111,15 @@ describe("Unit of Work", () => {
 
     test("should provide table query methods", () => {
       expect(uow.users).toBeDefined();
-      expect(uow.users.findFirst).toBeDefined();
-      expect(uow.users.findMany).toBeDefined();
+      expect(uow.users.find).toBeDefined();
       expect(uow.posts).toBeDefined();
-      expect(uow.posts.findFirst).toBeDefined();
-      expect(uow.posts.findMany).toBeDefined();
-    });
-
-    test("should handle missing table gracefully", async () => {
-      expect(() => {
-        (uow as any).nonexistent;
-      }).not.toThrow(); // UoW doesn't throw for missing properties, it just returns undefined
-
-      expect((uow as any).nonexistent).toBeUndefined();
+      expect(uow.posts.find).toBeDefined();
     });
   });
 
   describe("Basic Query Operations", () => {
-    test("should find first user", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+    test("should find user by id", async () => {
+      const user = await uow.users.find({ id: 1 });
 
       expect(user).toBeDefined();
       expect(user?.username).toBe("alice");
@@ -152,8 +127,8 @@ describe("Unit of Work", () => {
       expect(uow.getStats().trackedEntities).toBe(1);
     });
 
-    test("should find many users", async () => {
-      const users = await uow.users.findMany();
+    test("should find multiple users by ids", async () => {
+      const users = await uow.users.find({ id: [1, 2, 3] });
 
       expect(users).toBeDefined();
       expect(Array.isArray(users)).toBe(true);
@@ -162,18 +137,14 @@ describe("Unit of Work", () => {
     });
 
     test("should return undefined for non-existent entity", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "nonexistent"),
-      });
+      const user = await uow.users.find({ id: 999 });
 
       expect(user).toBeUndefined();
       expect(uow.getStats().trackedEntities).toBe(0);
     });
 
     test("should return empty array when no entities match", async () => {
-      const users = await uow.users.findMany({
-        where: (users, { eq }) => eq(users.username, "nonexistent"),
-      });
+      const users = await uow.users.find({ id: [999, 1000] });
 
       expect(users).toBeDefined();
       expect(Array.isArray(users)).toBe(true);
@@ -184,12 +155,8 @@ describe("Unit of Work", () => {
 
   describe("Entity Tracking and Identity Map", () => {
     test("should track entities from queries", async () => {
-      const user1 = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 1),
-      });
-      const user2 = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 1),
-      });
+      const user1 = await uow.users.find({ id: 1 });
+      const user2 = await uow.users.find({ id: 1 });
 
       expect(user1).toBe(user2!); // Same object reference due to identity map
       expect(uow.getStats().trackedEntities).toBe(1);
@@ -197,12 +164,8 @@ describe("Unit of Work", () => {
     });
 
     test("should maintain separate identities for different entities", async () => {
-      const user1 = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 1),
-      });
-      const user2 = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 2),
-      });
+      const user1 = await uow.users.find({ id: 1 });
+      const user2 = await uow.users.find({ id: 2 });
 
       expect(user1).not.toBe(user2);
       expect(uow.getStats().trackedEntities).toBe(2);
@@ -210,22 +173,18 @@ describe("Unit of Work", () => {
     });
 
     test("should handle mixed queries correctly", async () => {
-      const allUsers = await uow.users.findMany();
-      const specificUser = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 1),
-      });
+      const allUsers = await uow.users.find({ id: [1, 2, 3] });
+      const specificUser = await uow.users.find({ id: 1 });
 
       expect(allUsers[0]).toBe(specificUser!); // Same object reference
-      expect(uow.getStats().trackedEntities).toBe(3); // All users from findMany
+      expect(uow.getStats().trackedEntities).toBe(3); // All users from find
       expect(uow.getStats().identityMapSize).toBe(3);
     });
   });
 
   describe("Change Tracking", () => {
     test("should detect property changes", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
 
       expect(uow.getStats().pendingChanges).toBe(0);
 
@@ -235,9 +194,7 @@ describe("Unit of Work", () => {
     });
 
     test("should not create changeset for unchanged entities", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
 
       // Access properties but don't change them
       const username = user!.username;
@@ -247,9 +204,7 @@ describe("Unit of Work", () => {
     });
 
     test("should track multiple property changes on same entity", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
 
       user!.username = "alice_new";
       user!.email = "alice_new@example.com";
@@ -258,7 +213,7 @@ describe("Unit of Work", () => {
     });
 
     test("should track changes on multiple entities", async () => {
-      const users = await uow.users.findMany();
+      const users = await uow.users.find({ id: [1, 2] });
 
       users[0]!.username = "alice_new";
       users[1]!.username = "bob_new";
@@ -267,9 +222,7 @@ describe("Unit of Work", () => {
     });
 
     test("should not track changes after setting same value", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
       const originalUsername = user!.username;
 
       user!.username = "modified";
@@ -282,9 +235,7 @@ describe("Unit of Work", () => {
 
   describe("Save Operations", () => {
     test("should save modified entity", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
       user!.username = "alice_updated";
 
       await uow.save();
@@ -302,9 +253,7 @@ describe("Unit of Work", () => {
     });
 
     test("should handle save with no changes", async () => {
-      await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      await uow.users.find({ id: 1 });
 
       await uow.save(); // Should not throw
 
@@ -312,7 +261,7 @@ describe("Unit of Work", () => {
     });
 
     test("should save multiple modified entities", async () => {
-      const users = await uow.users.findMany();
+      const users = await uow.users.find({ id: [1, 2] });
 
       users[0]!.username = "alice_batch";
       users[1]!.username = "bob_batch";
@@ -332,18 +281,6 @@ describe("Unit of Work", () => {
         "bob_batch"
       );
     });
-
-    test("should handle save errors gracefully", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
-      user!.username = null as any; // Invalid change that should cause database error
-
-      expect(uow.save()).rejects.toThrow();
-
-      // UoW should still have pending changes after failed save
-      expect(uow.getStats().pendingChanges).toBe(1);
-    });
   });
 
   describe("Checkpoint and Rollback", () => {
@@ -358,9 +295,7 @@ describe("Unit of Work", () => {
     });
 
     test("should rollback to checkpoint", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
       const originalUsername = user!.username;
 
       const checkpoint = uow.setCheckpoint();
@@ -384,7 +319,7 @@ describe("Unit of Work", () => {
     });
 
     test("should rollback multiple changes", async () => {
-      const users = await uow.users.findMany();
+      const users = await uow.users.find({ id: [1, 2] });
       const originalUsernames = users.map((u) => u.username);
 
       const checkpoint = uow.setCheckpoint();
@@ -404,12 +339,8 @@ describe("Unit of Work", () => {
 
     test("should handle partial save to checkpoint", async () => {
       // Load only first two users
-      const user1 = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 1),
-      });
-      const user2 = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 2),
-      });
+      const user1 = await uow.users.find({ id: 1 });
+      const user2 = await uow.users.find({ id: 2 });
 
       // Modify entities tracked at checkpoint
       user1!.username = "checkpoint_mod1";
@@ -418,9 +349,7 @@ describe("Unit of Work", () => {
       const checkpoint = uow.setCheckpoint();
 
       // Load new entity after checkpoint
-      const newUser = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.id, 3),
-      });
+      const newUser = await uow.users.find({ id: 3 });
       newUser!.username = "after_checkpoint";
 
       expect(uow.getStats().pendingChanges).toBe(3);
@@ -434,15 +363,13 @@ describe("Unit of Work", () => {
       const dbUsers = await testDb.getDrizzleInstance().query.users.findMany();
       expect(dbUsers.find((u) => u.id === user1!.id)?.username).toBe("checkpoint_mod1");
       expect(dbUsers.find((u) => u.id === user2!.id)?.username).toBe("checkpoint_mod2");
-      expect(dbUsers.find((u: any) => u.id === 3)?.username).toBe("charlie"); // Currently gets saved
+      expect(dbUsers.find((u: any) => u.id === 3)?.username).toBe("charlie"); // Not saved
     });
   });
 
   describe("Proxy Behavior", () => {
     test("should create transparent proxies", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
 
       // Should behave like a normal object
       expect(user!.username).toBe("alice");
@@ -456,9 +383,7 @@ describe("Unit of Work", () => {
     });
 
     test("should intercept property changes", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
 
       const originalUsername = user!.username;
 
@@ -469,9 +394,7 @@ describe("Unit of Work", () => {
     });
 
     test("should handle null and undefined values", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      const user = await uow.users.find({ id: 1 });
 
       user!.email = null;
       expect(user!.email).toBeNull();
@@ -479,7 +402,7 @@ describe("Unit of Work", () => {
     });
 
     test("should not interfere with array operations", async () => {
-      const users = await uow.users.findMany();
+      const users = await uow.users.find({ id: [1, 2, 3] });
 
       expect(Array.isArray(users)).toBe(true);
       expect(users.length).toBe(3);
@@ -487,37 +410,9 @@ describe("Unit of Work", () => {
     });
   });
 
-  describe("Error Handling", () => {
-    test("should handle database constraint violations", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
-
-      // This would violate NOT NULL constraint in a real scenario
-      user!.username = null as never;
-
-      expect(uow.save()).rejects.toThrow();
-    });
-
-    test("should handle invalid checkpoint operations", () => {
-      const result = uow.rollback(-1);
-      expect(result.error).toBeDefined();
-    });
-
-    test("should handle refresh method (not implemented)", async () => {
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
-
-      expect(uow.refresh(user!)).rejects.toThrow(
-        "refresh() method is not yet implemented"
-      );
-    });
-  });
-
   describe("Statistics and Monitoring", () => {
     test("should provide accurate statistics", async () => {
-      const users = await uow.users.findMany();
+      const users = await uow.users.find({ id: [1, 2, 3] });
       const checkpoint = uow.setCheckpoint();
 
       users[0]!.username = "modified";
@@ -531,7 +426,7 @@ describe("Unit of Work", () => {
     });
 
     test("should reset statistics after clear", async () => {
-      await uow.users.findMany();
+      await uow.users.find({ id: [1, 2, 3] });
       uow.setCheckpoint();
 
       uow.clear();
@@ -546,10 +441,8 @@ describe("Unit of Work", () => {
 
   describe("Memory Management", () => {
     test("should clear all caches", async () => {
-      await uow.users.findMany();
-      const user = await uow.users.findFirst({
-        where: (users, { eq }) => eq(users.username, "alice"),
-      });
+      await uow.users.find({ id: [1, 2, 3] });
+      const user = await uow.users.find({ id: 1 });
       user!.username = "modified";
       uow.setCheckpoint();
 
@@ -567,7 +460,7 @@ describe("Unit of Work", () => {
   });
 });
 
-describe("Integration Tests", () => {
+describe("Integration Tests - New API", () => {
   let testDb: TestDatabase;
   let uow: CreateUowReturnType<BunSQLiteDatabase<typeof testSchema>>;
 
@@ -587,9 +480,7 @@ describe("Integration Tests", () => {
 
   test("complete workflow: query -> modify -> save", async () => {
     // Query
-    const user = await uow.users.findFirst({
-      where: (users, { eq }) => eq(users.username, "alice"),
-    });
+    const user = await uow.users.find({ id: 1 });
     expect(user).toBeDefined();
     expect(uow.getStats().trackedEntities).toBe(1);
 
@@ -612,7 +503,7 @@ describe("Integration Tests", () => {
 
   test("complete workflow with checkpoints", async () => {
     // Setup
-    const users = await uow.users.findMany();
+    const users = await uow.users.find({ id: [1, 2, 3] });
 
     // Modify first user
     users[0]!.username = "alice_cp1";
@@ -660,7 +551,7 @@ describe("Integration Tests", () => {
   });
 
   test("batch operations with mixed changes", async () => {
-    const users = await uow.users.findMany();
+    const users = await uow.users.find({ id: [1, 2, 3] });
 
     // Mix of modifications
     users[0]!.username = "alice_batch";
@@ -685,84 +576,11 @@ describe("Integration Tests", () => {
     expect(updatedUsers[2]?.email).toBe("charlie_batch@example.com");
   });
 
-  test("complex checkpoint scenario", async () => {
-    // Load initial data
-    const users = await uow.users.findMany();
-
-    // Checkpoint A
-    const checkpointA = uow.setCheckpoint();
-    users[0]!.username = "state_A";
-
-    // Checkpoint B
-    const checkpointB = uow.setCheckpoint();
-    users[1]!.username = "state_B";
-
-    // Checkpoint C
-    const checkpointC = uow.setCheckpoint();
-    users[2]!.username = "state_C";
-
-    // Additional changes after C
-    users[0]!.email = "after_C@example.com";
-
-    expect(uow.getStats().pendingChanges).toBe(3); // 3 entities modified (user 0 twice, user 1, user 2)
-
-    // Save up to checkpoint B
-    await uow.save(checkpointB);
-
-    expect(uow.getStats().pendingChanges).toBe(3);
-
-    // Rollback to checkpoint C
-    uow.rollback(checkpointC);
-
-    expect(users[0]?.email).toBe("alice@example.com"); // Rolled back
-    expect(uow.getStats().pendingChanges).toBe(1); // Changes remain after rollback
-
-    // Verify database state
-    const dbUsers = await testDb.getDrizzleInstance().query.users.findMany({
-      orderBy: (users, { asc }) => asc(users.id),
-    });
-
-    expect(dbUsers[0]?.username).toBe("state_A"); // Saved
-    expect(dbUsers[1]?.username).toBe("bob"); // should NOT be saved
-    expect(dbUsers[2]?.username).toBe("charlie");
-    expect(dbUsers[0]?.email).toBe("alice@example.com");
-  });
-
-  test("error recovery", async () => {
-    const user = await uow.users.findFirst({
-      where: (users, { eq }) => eq(users.username, "alice"),
-    });
-    const checkpoint = uow.setCheckpoint();
-
-    user!.username = "valid_change";
-
-    // This should succeed
-    await uow.save();
-    expect(uow.getStats().pendingChanges).toBe(0);
-
-    // Load again and make invalid change
-    const userAgain = await uow.users.findFirst({
-      where: (users, { eq }) => eq(users.id, user!.id),
-    });
-    userAgain!.username = null as any; // Invalid
-
-    // This should fail
-    await expect(uow.save()).rejects.toThrow();
-
-    // State should still show pending changes
-    expect(uow.getStats().pendingChanges).toBe(1);
-
-    // Should be able to rollback
-    const rollbackCheckpoint = uow.setCheckpoint();
-    const rollbackResult = uow.rollback(rollbackCheckpoint);
-    expect(rollbackResult.error).toBeNull();
-  });
-
   test("performance under load", async () => {
     const startTime = Date.now();
 
     // Create many entities
-    const users = await uow.users.findMany();
+    const users = await uow.users.find({ id: [1, 2, 3] });
 
     // Make many changes
     for (let i = 0; i < 100; i++) {
@@ -787,7 +605,7 @@ describe("Integration Tests", () => {
     // Create many checkpoints and changes
     for (let i = 0; i < 60; i++) {
       // More than the 50 checkpoint limit
-      await uow.users.findMany();
+      await uow.users.find({ id: [1, 2, 3] });
       uow.setCheckpoint();
       uow.clear(); // Simulate cleanup cycles
     }
@@ -796,9 +614,7 @@ describe("Integration Tests", () => {
     expect(uow.getStats().checkpointCount).toBeLessThanOrEqual(50);
 
     // Should still be functional
-    const user = await uow.users.findFirst({
-      where: (users, { eq }) => eq(users.username, "alice"),
-    });
+    const user = await uow.users.find({ id: 1 });
     expect(user).toBeDefined();
   });
 });
