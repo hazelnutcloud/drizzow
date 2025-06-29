@@ -1,4 +1,4 @@
-# drizzle-uow
+# drizzow (drizzle of work)
 
 A TypeScript library that implements the Unit of Work pattern for [DrizzleORM](https://orm.drizzle.team/), providing automatic change tracking, transaction management, and checkpoint/rollback functionality.
 
@@ -16,17 +16,17 @@ A TypeScript library that implements the Unit of Work pattern for [DrizzleORM](h
 ## Installation
 
 ```bash
-bun add drizzle-uow
+bun add drizzow
 # or
-npm install drizzle-uow
+npm install drizzow
 # or
-pnpm add drizzle-uow
+pnpm add drizzow
 ```
 
 ## Quick Start
 
 ```typescript
-import { createUow } from "drizzle-uow/bun-sqlite";
+import { createUow } from "drizzow/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 
@@ -85,7 +85,7 @@ console.log(user1 === user2); // true - same object reference
 ### Creating a Unit of Work
 
 ```typescript
-import { createUow } from "drizzle-uow/bun-sqlite";
+import { createUow } from "drizzow/bun-sqlite";
 
 const uow = createUow(drizzleDb);
 ```
@@ -115,7 +115,7 @@ const empty = await uow.users.find({ id: [999, 1000] }); // []
 const newUser = uow.users.create({
   id: 100,
   username: "bob",
-  email: "bob@example.com"
+  email: "bob@example.com",
 });
 
 // Delete entity
@@ -159,7 +159,7 @@ console.log({
   trackedEntities: stats.trackedEntities,
   pendingChanges: stats.pendingChanges,
   identityMapSize: stats.identityMapSize,
-  checkpointCount: stats.checkpointCount
+  checkpointCount: stats.checkpointCount,
 });
 ```
 
@@ -179,21 +179,24 @@ uow.clear();
 const users = await uow.users.findMany();
 
 // Create checkpoint A
-const checkpointA = uow.setCheckpoint();
 users[0].username = "state_A";
+const checkpointA = uow.setCheckpoint();
 
 // Create checkpoint B
-const checkpointB = uow.setCheckpoint();
 users[1].username = "state_B";
+const checkpointB = uow.setCheckpoint();
 
 // Make more changes
 users[2].username = "state_C";
 
-// Save only up to checkpoint B
-await uow.save(checkpointB);
+// Save only up to checkpoint A
+await uow.save(checkpointA);
 
-// Rollback to checkpoint A
-uow.rollback(checkpointA);
+// Rollback to checkpoint B
+uow.rollback(checkpointB);
+
+console.log(uow.getStats().pendingChanges);
+// Output: `1` (Only pending modification is "state_B")
 ```
 
 ### Batch Operations
@@ -203,12 +206,12 @@ uow.rollback(checkpointA);
 const users = [
   uow.users.create({ username: "user1" }),
   uow.users.create({ username: "user2" }),
-  uow.users.create({ username: "user3" })
+  uow.users.create({ username: "user3" }),
 ];
 
 // Modify existing entities
 const existingUsers = await uow.users.findMany();
-existingUsers.forEach(user => {
+existingUsers.forEach((user) => {
   user.lastActive = new Date();
 });
 
@@ -225,7 +228,7 @@ try {
 } catch (error) {
   // Changes remain pending after failed save
   console.log(uow.getStats().pendingChanges); // Still shows pending changes
-  
+
   // Can rollback to previous checkpoint
   uow.rollback(lastCheckpoint);
 }
@@ -271,7 +274,6 @@ The library consists of several key components:
 
 ## Recent Improvements
 
-### v0.2.0 - Checkpoint Save Bug Fix
 - **Fixed Critical Bug**: Checkpoint save operations now properly handle create and delete operations
 - **Enhanced Test Coverage**: Added comprehensive CRUD interaction tests
 - **Improved API**: New efficient `find()` method with identity map caching
@@ -280,7 +282,6 @@ The library consists of several key components:
 ## Limitations
 
 - Currently only supports SQLite (PostgreSQL and MySQL adapters coming soon)
-- The `refresh()` method is not yet implemented
 - Relationships are not automatically tracked (manual handling required)
 - Complex queries still require direct Drizzle usage
 

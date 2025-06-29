@@ -8,3 +8,4 @@
 - [x] Update tests for new find() API
 - [ ] Support relations in find()
 - [ ] Handle nested objects change detection correctly. This can happen for two scenarios: a relation to another table or a json column
+- [ ] Implement other db adapters starting with postgres
