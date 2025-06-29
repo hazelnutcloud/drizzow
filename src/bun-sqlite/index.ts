@@ -12,9 +12,8 @@ export type CreateUowReturnType<
  */
 export function createUow<TDatabase extends BaseSQLiteDatabase<any, any, any>>(
   db: TDatabase,
-  options?: { cacheEnabled?: boolean; cacheTTL?: number },
 ): CreateUowReturnType<TDatabase> {
   const adapter = new BunSQLiteAdapter(db);
   // Create the UoW instance
-  return new UnitOfWork(db, adapter, options) as never;
+  return new UnitOfWork(db, adapter) as never;
 }

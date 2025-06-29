@@ -1,5 +1,12 @@
-import type { Column, DBQueryConfig, Table, TableConfig } from "drizzle-orm";
-import type { DatabaseAdapter, ChangeSet, EntityState } from "./types";
+import {
+  createTableRelationsHelpers,
+  extractTablesRelationalConfig,
+  getTableUniqueName,
+  type Column,
+  type Table,
+  type TablesRelationalConfig,
+} from "drizzle-orm";
+import type { DatabaseAdapter, ChangeSet } from "./types";
 import { EntityState as EntityStateEnum } from "./types";
 
 /**
@@ -8,10 +15,18 @@ import { EntityState as EntityStateEnum } from "./types";
 export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   protected db: any;
   protected schema: Record<string, Table>;
+  private tablesRelationalConfig: TablesRelationalConfig;
+  private tableNamesMap: Record<string, string>;
 
   constructor(db: any) {
     this.db = db;
     this.schema = db._.fullSchema;
+    const config = extractTablesRelationalConfig(
+      db._.fullSchema,
+      createTableRelationsHelpers,
+    );
+    this.tablesRelationalConfig = config.tables;
+    this.tableNamesMap = config.tableNamesMap;
   }
 
   abstract beginTransaction(): Promise<any>;
@@ -19,7 +34,7 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   abstract executeUpdate(
     table: Table,
     id: any,
-    changes: Record<string, any>
+    changes: Record<string, any>,
   ): Promise<void>;
   abstract executeDelete(table: Table, id: any): Promise<void>;
   abstract commitTransaction(tx: any): Promise<void>;
@@ -39,13 +54,13 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
     try {
       // Group changes by type for optimal execution order
       const inserts = changeSets.filter(
-        (cs) => cs.state === EntityStateEnum.Added
+        (cs) => cs.state === EntityStateEnum.Added,
       );
       const updates = changeSets.filter(
-        (cs) => cs.state === EntityStateEnum.Modified
+        (cs) => cs.state === EntityStateEnum.Modified,
       );
       const deletes = changeSets.filter(
-        (cs) => cs.state === EntityStateEnum.Deleted
+        (cs) => cs.state === EntityStateEnum.Deleted,
       );
 
       // Execute in order: inserts, updates, deletes
@@ -92,18 +107,33 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   /**
    * Extract primary key value from an entity
    */
-  abstract extractPrimaryKeyValue(table: Table, entity: any): any;
+  extractPrimaryKeyValue(table: Table, entity: any): any {
+    const tableName = this.tableNamesMap[getTableUniqueName(table)]!;
+    const { columns } = this.tablesRelationalConfig[tableName]!;
+    const primaryKeyValues: any[] = [];
+
+    // Fallback: iterate through columns array to find primary keys
+    for (const column of Object.values(columns)) {
+      if (column.primary) {
+        primaryKeyValues.push(entity[column.name]);
+      }
+    }
+
+    // Return single value for single primary key, array for composite keys
+    return primaryKeyValues.length === 1
+      ? primaryKeyValues[0]
+      : primaryKeyValues;
+  }
 
   /**
    * Get table instance from table name
    * This is a placeholder - implementations should override this
    */
   protected getTableFromName(tableName: string): Table {
-    // This should be implemented by specific adapters
-    // They should maintain a mapping of table names to table instances
-    throw new Error(
-      `Table '${tableName}' not found. Adapter must implement getTableFromName.`
-    );
+    const table = this.schema[tableName];
+    if (!table) throw new Error(`Table '${tableName}' not found in schema`);
+
+    return table;
   }
 
   /**
@@ -134,7 +164,7 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   protected async executeBatchOperation<T>(
     items: T[],
     operation: (batch: T[]) => Promise<void>,
-    batchSize?: number
+    batchSize?: number,
   ): Promise<void> {
     const maxBatch = batchSize || Math.floor(this.getMaxParameters() / 10); // Conservative estimate
 
@@ -144,12 +174,16 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
     }
   }
 
-  abstract getTableConfig(table: Table): TableConfig;
+  getPrimaryKeyColumn(table: Table): Column | null {
+    const tableName = this.tableNamesMap[getTableUniqueName(table)]!;
+    const { columns } = this.tablesRelationalConfig[tableName]!;
 
-  abstract getPrimaryKeyColumn(table: Table): Column | null;
+    for (const column of Object.values(columns)) {
+      if (column.primary) {
+        return column;
+      }
+    }
 
-  abstract serializeQuery(
-    tableAlias: string,
-    query: DBQueryConfig<"many", true>
-  ): string;
+    return null;
+  }
 }
