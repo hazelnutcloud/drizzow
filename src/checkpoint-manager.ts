@@ -89,7 +89,7 @@ export class CheckpointManager {
    * Get checkpoint information
    */
   getCheckpointInfo(
-    checkpointId: number
+    checkpointId: number,
   ): { id: number; timestamp: number; entityCount: number } | null {
     const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
     if (!checkpoint) {
@@ -119,7 +119,7 @@ export class CheckpointManager {
    * Get the state of entities at a specific checkpoint
    */
   getEntityStatesAtCheckpoint(
-    checkpointId: number
+    checkpointId: number,
   ): Map<any, TrackedEntity> | null {
     const checkpoint = this.checkpoints.find((cp) => cp.id === checkpointId);
     if (!checkpoint) {
@@ -164,6 +164,9 @@ export class CheckpointManager {
       throw new Error(`Checkpoint ${checkpointId} not found`);
     }
     this.lastPersistedCheckpointId = checkpointId;
+    this.checkpoints = this.checkpoints.filter(
+      (checkpoint) => checkpoint.id !== checkpointId,
+    );
   }
   /**
    * Check if a checkpoint can be persisted
@@ -264,10 +267,10 @@ export class CheckpointManager {
     }
 
     const currentEntities = new Set(
-      this.changeTracker.getAllTracked().map((t) => t.entity)
+      this.changeTracker.getAllTracked().map((t) => t.entity),
     );
     const checkpointEntities = new Set(
-      Array.from(checkpoint.entityStates.keys())
+      Array.from(checkpoint.entityStates.keys()),
     );
 
     const added: any[] = [];
@@ -321,7 +324,7 @@ export class CheckpointManager {
   } {
     const totalEntitySnapshots = this.checkpoints.reduce(
       (sum, cp) => sum + cp.entityStates.size,
-      0
+      0,
     );
 
     return {
