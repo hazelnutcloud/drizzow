@@ -1,7 +1,7 @@
 import { run, bench, summary, boxplot } from "mitata";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import { sqliteTable, integer, text, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, real } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
 import { createUow } from "../src/bun-sqlite";
 
@@ -53,59 +53,6 @@ function setupDatabase() {
   `);
 
   return { sqlite, db };
-}
-
-// Vanilla Drizzle implementation - one transaction per event (like Ponder)
-async function vanillaDrizzleIndexing(
-  db: BunSQLiteDatabase<{ accounts: typeof accounts }>,
-  events: TransferEvent[]
-) {
-  for (const event of events) {
-    // Each event is processed in its own transaction
-    await db.transaction(async (tx: any) => {
-      // Handle sender (from)
-      if (event.from !== "0x0000000000000000000000000000000000000000") {
-        const sender = await tx
-          .select()
-          .from(accounts)
-          .where(eq(accounts.address, event.from))
-          .limit(1);
-
-        if (sender.length > 0) {
-          await tx
-            .update(accounts)
-            .set({ balance: sender[0].balance - event.value })
-            .where(eq(accounts.address, event.from));
-        } else {
-          await tx.insert(accounts).values({
-            address: event.from,
-            balance: -event.value,
-          });
-        }
-      }
-
-      // Handle receiver (to)
-      if (event.to !== "0x0000000000000000000000000000000000000000") {
-        const receiver = await tx
-          .select()
-          .from(accounts)
-          .where(eq(accounts.address, event.to))
-          .limit(1);
-
-        if (receiver.length > 0) {
-          await tx
-            .update(accounts)
-            .set({ balance: receiver[0].balance + event.value })
-            .where(eq(accounts.address, event.to));
-        } else {
-          await tx.insert(accounts).values({
-            address: event.to,
-            balance: event.value,
-          });
-        }
-      }
-    });
-  }
 }
 
 // UoW implementation
@@ -167,77 +114,40 @@ async function uowIndexing(
   await uow.save();
 }
 
-// Optimized vanilla Drizzle with batch operations
-async function vanillaDrizzleBatchIndexing(
+// Vanilla implementation (similar to their ERC20 indexer)
+async function vanillaIndexing(
   db: BunSQLiteDatabase<{ accounts: typeof accounts }>,
   events: TransferEvent[]
 ) {
-  // Aggregate balance changes
-  const balanceChanges = new Map<string, number>();
-
+  // Process each event individually like Ponder does
   for (const event of events) {
-    if (event.from !== "0x0000000000000000000000000000000000000000") {
-      balanceChanges.set(
-        event.from,
-        (balanceChanges.get(event.from) || 0) - event.value
-      );
-    }
-    if (event.to !== "0x0000000000000000000000000000000000000000") {
-      balanceChanges.set(
-        event.to,
-        (balanceChanges.get(event.to) || 0) + event.value
-      );
-    }
-  }
+    await db.transaction(async (tx) => {
+      // Handle sender (from)
+      if (event.from !== "0x0000000000000000000000000000000000000000") {
+        await tx
+          .insert(accounts)
+          .values({ address: event.from, balance: 0 })
+          .onConflictDoUpdate({
+            target: accounts.address,
+            set: {
+              balance: sql`${accounts.balance} - ${event.value}`,
+            },
+          });
+      }
 
-  // Get all addresses
-  const addresses = Array.from(balanceChanges.keys());
-
-  // Fetch existing accounts
-  const existingAccounts = await db
-    .select()
-    .from(accounts)
-    .where(
-      sql`address IN (${sql.join(
-        addresses.map((a) => sql`${a}`),
-        sql`, `
-      )})`
-    );
-
-  const existingAddresses = new Set(
-    existingAccounts.map((a: any) => a.address)
-  );
-
-  // Prepare inserts and updates
-  const inserts: any[] = [];
-  const updates: any[] = [];
-
-  for (const [address, change] of balanceChanges) {
-    if (existingAddresses.has(address)) {
-      const account = existingAccounts.find((a: any) => a.address === address);
-      updates.push({
-        address,
-        balance: account!.balance + change,
-      });
-    } else {
-      inserts.push({
-        address,
-        balance: change,
-      });
-    }
-  }
-
-  // Execute batch operations
-  if (inserts.length > 0) {
-    await db.insert(accounts).values(inserts);
-  }
-
-  // Update existing accounts one by one (SQLite doesn't support bulk updates well)
-  for (const update of updates) {
-    await db
-      .update(accounts)
-      .set({ balance: update.balance })
-      .where(eq(accounts.address, update.address));
+      // Handle receiver (to)
+      if (event.to !== "0x0000000000000000000000000000000000000000") {
+        await tx
+          .insert(accounts)
+          .values({ address: event.to, balance: event.value })
+          .onConflictDoUpdate({
+            target: accounts.address,
+            set: {
+              balance: sql`${accounts.balance} + ${event.value}`,
+            },
+          });
+      }
+    });
   }
 }
 
@@ -247,21 +157,7 @@ console.log("🚀 ERC20 Transfer Events Indexing Benchmark\n");
 boxplot(() => {
   summary(() => {
     bench(
-      "Vanilla Drizzle (1 tx/event) - $events events ($addresses addresses)",
-      async function* (state: any) {
-        const eventCount = state.get("events");
-        const addressCount = state.get("addresses");
-        const events = generateTransferEvents(eventCount, addressCount);
-
-        yield async () => {
-          const { db } = setupDatabase();
-          await vanillaDrizzleIndexing(db, events);
-        };
-      }
-    ).args({ events: [10, 50, 100], addresses: [20, 50, 100] });
-
-    bench(
-      "UoW (1 tx total) - $events events ($addresses addresses)",
+      "UoW - $events events ($addresses addresses)",
       async function* (state: any) {
         const eventCount = state.get("events");
         const addressCount = state.get("addresses");
@@ -272,10 +168,10 @@ boxplot(() => {
           await uowIndexing(db, events);
         };
       }
-    ).args({ events: [10, 50, 100], addresses: [20, 50, 100] });
+    ).args({ events: [100, 500, 1000], addresses: [200, 500, 1000] });
 
     bench(
-      "Vanilla Batch - $events events ($addresses addresses)",
+      "Vanilla - $events events ($addresses addresses)",
       async function* (state: any) {
         const eventCount = state.get("events");
         const addressCount = state.get("addresses");
@@ -283,10 +179,10 @@ boxplot(() => {
 
         yield async () => {
           const { db } = setupDatabase();
-          await vanillaDrizzleBatchIndexing(db, events);
+          await vanillaIndexing(db, events);
         };
       }
-    ).args({ events: [10, 50, 100], addresses: [20, 50, 100] });
+    ).args({ events: [100, 500, 1000], addresses: [200, 500, 1000] });
   });
 });
 
@@ -294,18 +190,8 @@ boxplot(() => {
 console.log("\n📊 Focused Performance Tests\n");
 
 summary(() => {
-  // Test with high address reuse (simulating popular tokens)
-  bench("High Reuse - Vanilla Drizzle", async function* () {
-    const events = generateTransferEvents(100, 10); // 100 events, only 10 unique addresses
-
-    yield async () => {
-      const { db } = setupDatabase();
-      await vanillaDrizzleIndexing(db, events);
-    };
-  });
-
   bench("High Reuse - UoW", async function* () {
-    const events = generateTransferEvents(100, 10); // 100 events, only 10 unique addresses
+    const events = generateTransferEvents(1000, 100); // 100 events, only 10 unique addresses
 
     yield async () => {
       const { db } = setupDatabase();
@@ -313,47 +199,55 @@ summary(() => {
     };
   });
 
-  // Test with low address reuse (simulating new token)
-  bench("Low Reuse - Vanilla Drizzle", async function* () {
-    const events = generateTransferEvents(100, 100); // 100 events, 100 unique addresses
+  bench("High Reuse - Vanilla", async function* () {
+    const events = generateTransferEvents(1000, 100); // 100 events, only 10 unique addresses
 
     yield async () => {
       const { db } = setupDatabase();
-      await vanillaDrizzleIndexing(db, events);
+      await vanillaIndexing(db, events);
     };
   });
 
   bench("Low Reuse - UoW", async function* () {
-    const events = generateTransferEvents(100, 100); // 100 events, 100 unique addresses
+    const events = generateTransferEvents(1000, 1000); // 1000 events, 1000 unique addresses
 
     yield async () => {
       const { db } = setupDatabase();
       await uowIndexing(db, events);
     };
   });
-});
 
-// Memory usage comparison
-console.log("\n💾 Memory Usage Analysis\n");
-
-summary(() => {
-  bench("Memory - Vanilla (1000 events)", async function* () {
-    const events = generateTransferEvents(1000, 200);
+  bench("Low Reuse - Vanilla", async function* () {
+    const events = generateTransferEvents(1000, 1000); // 1000 events, 1000 unique addresses
 
     yield async () => {
       const { db } = setupDatabase();
-      await vanillaDrizzleIndexing(db, events);
+      await vanillaIndexing(db, events);
     };
-  }).gc("inner");
+  });
+});
 
+// Memory usage test
+console.log("\n💾 Memory Usage Analysis\n");
+
+summary(() => {
   bench("Memory - UoW (1000 events)", async function* () {
-    const events = generateTransferEvents(1000, 200);
+    const events = generateTransferEvents(10000, 2000);
 
     yield async () => {
       const { db } = setupDatabase();
       await uowIndexing(db, events);
     };
-  }).gc("inner");
+  }).gc();
+
+  bench("Memory - Vanilla (1000 events)", async function* () {
+    const events = generateTransferEvents(10000, 2000);
+
+    yield async () => {
+      const { db } = setupDatabase();
+      await vanillaIndexing(db, events);
+    };
+  }).gc();
 });
 
 await run();
