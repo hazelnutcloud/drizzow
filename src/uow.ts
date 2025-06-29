@@ -31,24 +31,12 @@ export class UnitOfWork<
   private identityMap: IdentityMap;
   private changeTracker: ChangeTracker;
   private proxyManager: ProxyManager;
-  private checkpointManager: CheckpointManager;
+  checkpointManager: CheckpointManager;
   private adapter: BaseDatabaseAdapter;
-  private queryCache: Map<string, { result: any; timestamp: number }>;
-  private cacheEnabled: boolean;
-  private cacheTTL: number;
 
-  constructor(
-    db: TDatabase,
-    adapter: BaseDatabaseAdapter,
-    options?: { cacheEnabled?: boolean; cacheTTL?: number },
-  ) {
+  constructor(db: TDatabase, adapter: BaseDatabaseAdapter) {
     this.db = db;
     this.schema = db._.fullSchema as never;
-
-    // Initialize cache settings
-    this.cacheEnabled = options?.cacheEnabled ?? true;
-    this.cacheTTL = options?.cacheTTL ?? 60000; // Default 60 seconds
-    this.queryCache = new Map();
 
     // Initialize core components
     this.adapter = adapter;
@@ -205,6 +193,7 @@ export class UnitOfWork<
   async save(checkpoint?: number): Promise<void> {
     let changeSets;
     let checkpointState: Map<any, TrackedEntity> | null = null;
+    let entityToChangeSet: Map<any, any> | null = null;
     if (checkpoint !== undefined) {
       const validationError =
         this.checkpointManager.getPersistedCheckpointError(checkpoint);
@@ -221,6 +210,8 @@ export class UnitOfWork<
 
       // Compute changesets based on what was modified up to the checkpoint
       changeSets = [];
+      entityToChangeSet = new Map<any, any>();
+      
       for (const [entity, checkpointTracked] of checkpointState) {
         // Check if this entity is still being tracked
         const currentTracked = this.changeTracker.getTrackedEntity(entity);
@@ -229,10 +220,11 @@ export class UnitOfWork<
         // Handle different entity states at checkpoint
         if (checkpointTracked.state === EntityState.Modified) {
           const changeSet = {
-            entity: entity,
+            entity: checkpointTracked.entity, // Use checkpoint entity state
             state: checkpointTracked.state,
             changes: new Map(),
             tableName: checkpointTracked.tableName,
+            originalEntity: entity, // Keep reference to original entity
           };
 
           // Use the changes from the checkpoint state
@@ -251,25 +243,32 @@ export class UnitOfWork<
 
           if (changeSet.changes.size > 0) {
             changeSets.push(changeSet);
+            entityToChangeSet.set(entity, changeSet);
           }
         } else if (checkpointTracked.state === EntityState.Added) {
           // Handle entities that were created before the checkpoint
+          // Create a new object with checkpoint values to avoid modifying the current entity
+          const checkpointEntity = { ...checkpointTracked.entity };
           const changeSet = {
-            entity: entity,
+            entity: checkpointEntity, // Use a copy of checkpoint state
             state: checkpointTracked.state,
             changes: new Map(),
             tableName: checkpointTracked.tableName,
+            originalEntity: entity, // Keep reference to original entity
           };
           changeSets.push(changeSet);
+          entityToChangeSet.set(entity, changeSet);
         } else if (checkpointTracked.state === EntityState.Deleted) {
           // Handle entities that were deleted before the checkpoint
           const changeSet = {
-            entity: entity,
+            entity: checkpointTracked.entity, // Use checkpoint entity state
             state: checkpointTracked.state,
             changes: new Map(),
             tableName: checkpointTracked.tableName,
+            originalEntity: entity, // Keep reference to original entity
           };
           changeSets.push(changeSet);
+          entityToChangeSet.set(entity, changeSet);
         }
       }
     } else {
@@ -283,36 +282,61 @@ export class UnitOfWork<
       // Execute all changes in a transaction
       await this.adapter.executeChangeSets(changeSets);
       // Mark checkpoint as persisted if saving to a specific checkpoint
-      if (checkpoint !== undefined) {
+      if (checkpoint !== undefined && entityToChangeSet instanceof Map) {
         this.checkpointManager.markCheckpointAsPersisted(checkpoint);
         // For checkpoint saves, we need to update the original values of saved entities
         // to reflect their state at the checkpoint
-        for (const changeSet of changeSets) {
-          const tracked = this.changeTracker.getTrackedEntity(changeSet.entity);
-          const checkpointTracked = checkpointState?.get(changeSet.entity);
+        for (const [entity, changeSet] of entityToChangeSet) {
+          const tracked = this.changeTracker.getTrackedEntity(entity);
+          const checkpointTracked = checkpointState?.get(entity);
           if (tracked && checkpointTracked) {
-            // Update original values to the checkpoint state (what was saved)
-            for (const [property, value] of Object.entries(
-              checkpointTracked.entity,
-            )) {
-              tracked.originalValues.set(property, value);
-            }
-            // Mark this entity as having persisted original values
-            this.changeTracker.markOriginalValuesAsPersisted(
-              changeSet.entity,
-              tracked.originalValues,
-            );
-            // Recompute the state based on current vs new original values
-            let hasChanges = false;
-            for (const [property, originalValue] of tracked.originalValues) {
-              if (tracked.entity[property] !== originalValue) {
-                hasChanges = true;
-                break;
+            // For Added entities that were saved, transition to Unchanged
+            if (checkpointTracked.state === EntityState.Added) {
+              tracked.state = EntityState.Unchanged;
+              // Set original values to the saved state
+              tracked.originalValues.clear();
+              for (const [property, value] of Object.entries(
+                checkpointTracked.entity,
+              )) {
+                tracked.originalValues.set(property, value);
               }
+            } else if (checkpointTracked.state === EntityState.Modified) {
+              // Update original values to the checkpoint state (what was saved)
+              for (const [property, value] of Object.entries(
+                checkpointTracked.entity,
+              )) {
+                tracked.originalValues.set(property, value);
+              }
+              // Recompute the state based on current vs new original values
+              let hasChanges = false;
+              for (const [property, originalValue] of tracked.originalValues) {
+                if (tracked.entity[property] !== originalValue) {
+                  hasChanges = true;
+                  break;
+                }
+              }
+              tracked.state = hasChanges
+                ? EntityState.Modified
+                : EntityState.Unchanged;
+            } else if (checkpointTracked.state === EntityState.Deleted) {
+              // Remove deleted entities from tracking
+              this.changeTracker.untrack([entity]);
+              this.identityMap.remove(
+                checkpointTracked.tableName,
+                this.adapter.extractPrimaryKeyValue(
+                  this.schema[checkpointTracked.tableName],
+                  entity
+                )
+              );
             }
-            tracked.state = hasChanges
-              ? EntityState.Modified
-              : EntityState.Unchanged;
+            
+            // Mark this entity as having persisted original values
+            if (tracked && tracked.state !== EntityState.Deleted) {
+              this.changeTracker.markOriginalValuesAsPersisted(
+                entity,
+                tracked.originalValues,
+              );
+            }
           }
         }
       } else {
@@ -345,6 +369,13 @@ export class UnitOfWork<
   }
 
   /**
+   * Check if a checkpoint exists
+   */
+  hasCheckpoint(checkpoint: number): boolean {
+    return this.checkpointManager.hasCheckpoint(checkpoint);
+  }
+
+  /**
    * Refresh an entity from the database
    */
   async refresh(entity: any): Promise<void> {
@@ -374,6 +405,8 @@ export class UnitOfWork<
     };
   }
 
+
+
   /**
    * Clear all tracking and caches
    */
@@ -382,6 +415,5 @@ export class UnitOfWork<
     this.identityMap.clear();
     this.proxyManager.clearCache();
     this.checkpointManager.clearCheckpoints();
-    this.queryCache.clear();
   }
 }
