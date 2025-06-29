@@ -58,18 +58,19 @@ The library is built around several key components that work together:
 The library extends Drizzle's API with UoW functionality:
 
 ```typescript
-// Standard Drizzle query methods (proxy-wrapped results)
-const user = await uow.users.findFirst();
-const users = await uow.users.findMany();
+// Efficient find() method with identity map caching
+const user = await uow.users.find({ id: 1 });
+const users = await uow.users.find({ id: [1, 2, 3] });
 
 // UoW-specific methods
-const newUser = uow.users.create({ username: "test" });
+const newUser = uow.users.create({ id: 100, username: "test" });
 uow.users.delete(existingUser);
 
 // UoW management
 await uow.save();                    // Save all changes
 const checkpoint = uow.setCheckpoint(); // Create checkpoint  
 uow.rollback(checkpoint);           // Rollback to checkpoint
+await uow.save(checkpoint);         // Save up to specific checkpoint
 ```
 
 ## Type System
@@ -98,12 +99,34 @@ The library maintains full type safety through:
 - Comprehensive error handling with transaction rollback
 - Performance optimized with lazy proxy creation and efficient change detection
 
+## Recent Updates
+
+### Checkpoint Save Bug Fix (2025-06-30)
+- **Critical Fix**: Resolved issue where checkpoint save operations only handled modified entities
+- **Full CRUD Support**: Checkpoint saves now properly handle create, modify, and delete operations
+- **Enhanced Testing**: Added comprehensive CRUD interaction tests in `tests/crud-interactions.test.ts`
+- **API Improvements**: New efficient `find()` method with identity map caching
+- **Documentation**: Added `KNOWN_ISSUES.md` to track resolved and current limitations
+
 ## Testing Strategy
 
 The project includes:
-- Unit tests for individual components
-- Integration tests with real database operations
+- Unit tests for individual components (`src/*.test.ts`)
+- Integration tests with real database operations (`tests/*.test.ts`)
+- CRUD interaction tests (`tests/crud-interactions.test.ts`)
+- Checkpoint and rollback functionality tests
 - Type safety verification
 - Multi-database compatibility testing (planned)
 
-Use `bun run ./src/test.ts` to run the comprehensive test suite that verifies change tracking, checkpoints, rollback functionality, and database persistence.
+### Running Tests
+```bash
+bun test                    # Run all tests
+bun run ./src/test.ts       # Run the main test suite
+```
+
+### Key Test Files
+- `src/uow.test.ts`: Core UoW functionality with new find() API
+- `tests/crud-interactions.test.ts`: Comprehensive CRUD operations with checkpoints
+- `tests/create-delete.test.ts`: Create and delete operation tests
+- `src/change-tracker.test.ts`: Change tracking functionality
+- `src/checkpoint-manager.test.ts`: Checkpoint system tests

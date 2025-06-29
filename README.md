@@ -6,10 +6,12 @@ A TypeScript library that implements the Unit of Work pattern for [DrizzleORM](h
 
 - 🔄 **Automatic Change Tracking** - Transparently tracks entity modifications through JavaScript proxies
 - 💾 **Transaction Management** - Batches database operations and commits them in a single transaction
-- ⏮️ **Checkpoint & Rollback** - Create snapshots and rollback to previous states
+- ⏮️ **Checkpoint & Rollback** - Create snapshots and rollback to previous states with full CRUD support
 - 🗺️ **Identity Map** - Ensures single instance per entity and prevents duplicate fetches
 - 🔒 **Type Safety** - Full TypeScript support with Drizzle's type inference
 - 🚀 **Zero Dependencies** - Only requires DrizzleORM as a peer dependency
+- ⚡ **Efficient Queries** - Smart caching and optimized primary key lookups
+- 🛡️ **Data Integrity** - Comprehensive validation and error handling
 
 ## Installation
 
@@ -40,10 +42,8 @@ const sqlite = new Database("app.db");
 const db = drizzle(sqlite, { schema: { users } });
 const uow = createUow(db);
 
-// Use the UoW
-const user = await uow.users.findFirst({
-  where: eq(users.username, "alice")
-});
+// Use the UoW with the new find() API
+const user = await uow.users.find({ id: 1 });
 
 // Changes are automatically tracked
 user.email = "alice@newdomain.com";
@@ -92,18 +92,20 @@ const uow = createUow(drizzleDb);
 
 ### Query Methods
 
-The UoW provides the same query methods as Drizzle, but returns tracked entities:
+The UoW provides an efficient `find()` method for primary key lookups with identity map caching:
 
 ```typescript
-// Find single entity
-const user = await uow.users.findFirst({
-  where: eq(users.username, "alice")
-});
+// Find single entity by primary key
+const user = await uow.users.find({ id: 1 });
 
-// Find multiple entities
-const users = await uow.users.findMany({
-  where: gt(users.createdAt, lastWeek)
-});
+// Find multiple entities by primary keys
+const users = await uow.users.find({ id: [1, 2, 3] });
+
+// Returns undefined if not found
+const notFound = await uow.users.find({ id: 999 }); // undefined
+
+// Returns empty array if none found
+const empty = await uow.users.find({ id: [999, 1000] }); // []
 ```
 
 ### Create and Delete
@@ -111,12 +113,13 @@ const users = await uow.users.findMany({
 ```typescript
 // Create new entity
 const newUser = uow.users.create({
+  id: 100,
   username: "bob",
   email: "bob@example.com"
 });
 
 // Delete entity
-const user = await uow.users.findFirst();
+const user = await uow.users.find({ id: 1 });
 uow.users.delete(user);
 ```
 
@@ -266,11 +269,20 @@ The library consists of several key components:
 - **CheckpointManager**: Handles snapshots and rollbacks
 - **DatabaseAdapter**: Abstraction for different database types
 
+## Recent Improvements
+
+### v0.2.0 - Checkpoint Save Bug Fix
+- **Fixed Critical Bug**: Checkpoint save operations now properly handle create and delete operations
+- **Enhanced Test Coverage**: Added comprehensive CRUD interaction tests
+- **Improved API**: New efficient `find()` method with identity map caching
+- **Better Error Handling**: Enhanced validation and error messages
+
 ## Limitations
 
 - Currently only supports SQLite (PostgreSQL and MySQL adapters coming soon)
 - The `refresh()` method is not yet implemented
 - Relationships are not automatically tracked (manual handling required)
+- Complex queries still require direct Drizzle usage
 
 ## Contributing
 
