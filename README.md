@@ -198,7 +198,7 @@ The library consists of several key components:
 
 ## Limitations
 
-- Currently only supports SQLite (PostgreSQL and MySQL adapters coming soon)
+- Currently only supports Bun SQLite and PostgreSQL (More adapters coming soon)
 - Relationships are not automatically tracked (manual handling required)
 - Complex queries still require direct Drizzle usage
 
