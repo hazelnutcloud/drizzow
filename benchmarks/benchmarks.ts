@@ -8,7 +8,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Available benchmarks
 const benchmarks = {
-  "erc20-indexing": "ERC20 token indexing simulation",
+  "erc20-indexing": "ERC20 token indexing simulation (SQLite only)",
+  "erc20-indexing-multi-db": "ERC20 token indexing simulation (SQLite + PostgreSQL)",
   // Add more benchmarks here as they are created
   // "query-performance": "Query performance comparison",
   // "batch-operations": "Batch insert/update operations",

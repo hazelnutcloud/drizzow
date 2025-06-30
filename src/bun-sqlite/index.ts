@@ -3,6 +3,8 @@ import type { UnitOfWorkRepos } from "../types";
 import { BunSQLiteAdapter } from "./adapter";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
 
+export { BunSQLiteAdapter } from "./adapter";
+
 export type CreateUowReturnType<
   TDatabase extends BaseSQLiteDatabase<any, any, any>,
 > = UnitOfWork<TDatabase> & UnitOfWorkRepos<TDatabase>;

@@ -4,16 +4,21 @@
   "type": "module",
   "scripts": {
     "bench": "bun run benchmarks/benchmarks.ts",
-    "bench:gc": "bun --expose-gc run benchmarks/benchmarks.ts"
+    "bench:gc": "bun --expose-gc run benchmarks/benchmarks.ts",
+    "docker:postgres:up": "docker run -d --name drizzle-uow-postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=test postgres:16 || docker start drizzle-uow-postgres && echo 'Waiting for PostgreSQL to be ready...' && sleep 5",
+    "docker:postgres:down": "docker stop drizzle-uow-postgres || true && docker rm drizzle-uow-postgres || true",
+    "test:postgres": "PG_TEST_DB_URL=postgresql://postgres:postgres@localhost:5432/test bun test src/node-postgres/adapter.test.ts",
+    "test:postgres:full": "bun run docker:postgres:up && PG_TEST_DB_URL=postgresql://postgres:postgres@localhost:5432/test bun test src/node-postgres/adapter.test.ts; bun run docker:postgres:down"
   },
   "devDependencies": {
     "@types/bun": "^1.2.17",
-    "mitata": "^1.0.34"
+    "@types/pg": "^8.15.4",
+    "mitata": "^1.0.34",
+    "pg": "^8.16.3"
   },
   "peerDependencies": {
-    "typescript": "^5.8.3"
-  },
-  "dependencies": {
-    "drizzle-orm": "^0.44.2"
+    "typescript": "^5.8.3",
+    "pg": "^8.0.0",
+    "drizzle-orm": "^0.44.0"
   }
 }

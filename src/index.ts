@@ -7,3 +7,7 @@ export { IdentityMap } from "./identity-map";
 export { ChangeTracker } from "./change-tracker";
 export { ProxyManager } from "./proxy";
 export { CheckpointManager } from "./checkpoint-manager";
+
+// Re-export database adapters
+export { BunSQLiteAdapter } from "./bun-sqlite";
+export { NodePostgresAdapter } from "./node-postgres";

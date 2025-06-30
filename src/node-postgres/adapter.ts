@@ -1,21 +1,21 @@
 import type { Table } from "drizzle-orm";
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
+import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
-import { SqliteAdapter } from "../sqlite-core/adapter";
+import { PostgresAdapter } from "../pg-core/adapter";
 
 /**
- * SQLite database adapter
+ * PostgreSQL database adapter for node-postgres
  */
-export class BunSQLiteAdapter extends SqliteAdapter {
-  protected override db: BaseSQLiteDatabase<any, any, any>;
+export class NodePostgresAdapter extends PostgresAdapter {
+  protected override db: NodePgDatabase<any>;
 
-  constructor(db: BaseSQLiteDatabase<any, any, any>) {
+  constructor(db: NodePgDatabase<any>) {
     super(db);
     this.db = db;
   }
 
   override async beginTransaction(): Promise<any> {
-    // SQLite in Drizzle uses transactions differently
+    // PostgreSQL in Drizzle uses transactions differently
     // We'll return a transaction object that we can use later
     return this.db.transaction(async (tx) => {
       return tx;
@@ -59,18 +59,18 @@ export class BunSQLiteAdapter extends SqliteAdapter {
   }
 
   override async commitTransaction(_tx: any): Promise<void> {
-    // In Drizzle SQLite, transactions are auto-committed when the callback completes
+    // In Drizzle PostgreSQL, transactions are auto-committed when the callback completes
     // This is handled by the transaction wrapper
   }
 
   override async rollbackTransaction(_tx: any): Promise<void> {
-    // In Drizzle SQLite, transactions are auto-rolled back on error
+    // In Drizzle PostgreSQL, transactions are auto-rolled back on error
     // This is handled by the transaction wrapper
     throw new Error("Transaction rolled back");
   }
 
   /**
-   * Override the changeset execution to use SQLite transactions properly
+   * Override the changeset execution to use PostgreSQL transactions properly
    */
   override async executeChangeSets(changeSets: any[]): Promise<void> {
     if (changeSets.length === 0) {

@@ -8,6 +8,12 @@ import type {
   TablesRelationalConfig,
 } from "drizzle-orm";
 import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import type {
+  MySqlDatabase,
+  MySqlQueryResultHKT,
+  PreparedQueryHKTBase,
+} from "drizzle-orm/mysql-core";
 
 /**
  * Entity states for change tracking
@@ -62,7 +68,10 @@ export interface Checkpoint {
  */
 export type AnyDrizzleDB<
   TSchema extends Record<string, any> = Record<string, any>,
-> = BaseSQLiteDatabase<any, any, TSchema>;
+> =
+  | BaseSQLiteDatabase<any, any, TSchema>
+  | PgDatabase<PgQueryResultHKT, TSchema>
+  | MySqlDatabase<MySqlQueryResultHKT, PreparedQueryHKTBase, TSchema>;
 
 export type ExtractSchema<TDatabase> =
   TDatabase extends AnyDrizzleDB<infer TSchema> ? TSchema : never;
@@ -116,5 +125,4 @@ export interface DatabaseAdapter {
   executeDelete(table: Table, id: any): Promise<void>;
   commitTransaction(tx: any): Promise<void>;
   rollbackTransaction(tx: any): Promise<void>;
-  insertNewEntity(table: Table, data: any): Promise<any>;
 }
