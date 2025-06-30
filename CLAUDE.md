@@ -68,7 +68,7 @@ uow.users.delete(existingUser);
 
 // UoW management
 await uow.save();                    // Save all changes
-const checkpoint = uow.setCheckpoint(); // Create checkpoint  
+const checkpoint = uow.setCheckpoint(); // Create checkpoint
 uow.rollback(checkpoint);           // Rollback to checkpoint
 await uow.save(checkpoint);         // Save up to specific checkpoint
 ```
@@ -83,7 +83,7 @@ The library maintains full type safety through:
 
 ## Key Files
 
-- `src/index.ts`: Main entry point with `createUow()` function
+- `src/index.ts`: Main entry point with `drizzow()` function
 - `src/types.ts`: Core TypeScript definitions and interfaces
 - `src/schema.ts`: Test schema definitions
 - `src/example.ts`: Usage examples

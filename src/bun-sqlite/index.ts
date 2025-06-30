@@ -10,7 +10,7 @@ export type CreateUowReturnType<
 /**
  * Create a Unit of Work instance for a Drizzle database
  */
-export function createUow<TDatabase extends BaseSQLiteDatabase<any, any, any>>(
+export function drizzow<TDatabase extends BaseSQLiteDatabase<any, any, any>>(
   db: TDatabase,
 ): CreateUowReturnType<TDatabase> {
   const adapter = new BunSQLiteAdapter(db);

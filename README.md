@@ -26,7 +26,7 @@ pnpm add drizzow
 ## Quick Start
 
 ```typescript
-import { createUow } from "drizzow/bun-sqlite";
+import { drizzow } from "drizzow/bun-sqlite";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 
@@ -40,7 +40,7 @@ const users = sqliteTable("users", {
 // Create database and UoW
 const sqlite = new Database("app.db");
 const db = drizzle(sqlite, { schema: { users } });
-const uow = createUow(db);
+const uow = drizzow(db);
 
 // Use the UoW with the new find() API
 const user = await uow.users.find({ id: 1 });
@@ -85,9 +85,9 @@ console.log(user1 === user2); // true - same object reference
 ### Creating a Unit of Work
 
 ```typescript
-import { createUow } from "drizzow/bun-sqlite";
+import { drizzow } from "drizzow/bun-sqlite";
 
-const uow = createUow(drizzleDb);
+const uow = drizzow(drizzleDb);
 ```
 
 ### Query Methods

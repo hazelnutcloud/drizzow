@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import { createUow, type CreateUowReturnType } from "../src/bun-sqlite";
+import { drizzow, type CreateUowReturnType } from "../src/bun-sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 // Define test schema
@@ -63,7 +63,7 @@ describe("Checkpoint and Rollback System", () => {
     ]);
 
     // Create UoW instance
-    uow = createUow(db);
+    uow = drizzow(db);
   });
 
   describe("Basic Checkpoint Operations", () => {
@@ -91,7 +91,7 @@ describe("Checkpoint and Rollback System", () => {
       await uow.posts.find({ id: 1 });
 
       const checkpoint = uow.setCheckpoint();
-      
+
       // Check stats after loading entities
       stats = uow.getStats();
       expect(stats.trackedEntities).toBe(initialTracked + 3); // 2 users + 1 post
@@ -130,20 +130,20 @@ describe("Checkpoint and Rollback System", () => {
       const user2 = await uow.users.find({ id: 2 });
       const post1 = await uow.posts.find({ id: 1 });
 
-      const originalUser1 = { 
-        username: user1!.username, 
-        age: user1!.age, 
-        email: user1!.email 
+      const originalUser1 = {
+        username: user1!.username,
+        age: user1!.age,
+        email: user1!.email,
       };
-      const originalUser2 = { 
-        username: user2!.username, 
+      const originalUser2 = {
+        username: user2!.username,
         email: user2!.email,
-        age: user2!.age
+        age: user2!.age,
       };
-      const originalPost1 = { 
-        title: post1!.title, 
+      const originalPost1 = {
+        title: post1!.title,
         published: post1!.published,
-        content: post1!.content
+        content: post1!.content,
       };
 
       const checkpoint = uow.setCheckpoint();
@@ -191,11 +191,11 @@ describe("Checkpoint and Rollback System", () => {
 
       // Check entities are removed
       expect(uow.getStats().pendingChanges).toBe(0);
-      
+
       // Try to find the created entities - should not exist
       const foundUser = await uow.users.find({ id: 100 });
       const foundPost = await uow.posts.find({ id: 100 });
-      
+
       expect(foundUser).toBeUndefined();
       expect(foundPost).toBeUndefined();
     });
@@ -217,11 +217,11 @@ describe("Checkpoint and Rollback System", () => {
 
       // Check entities are restored
       expect(uow.getStats().pendingChanges).toBe(0);
-      
+
       // Entities should be findable again
       const restoredUser = await uow.users.find({ id: 3 });
       const restoredPost = await uow.posts.find({ id: 2 });
-      
+
       expect(restoredUser).toBeDefined();
       expect(restoredPost).toBeDefined();
       expect(restoredUser!.username).toBe("charlie");
@@ -236,17 +236,17 @@ describe("Checkpoint and Rollback System", () => {
 
       // First checkpoint
       const cp1 = uow.setCheckpoint();
-      
+
       user!.username = "first_modification";
-      
+
       // Second checkpoint
       const cp2 = uow.setCheckpoint();
-      
+
       user!.username = "second_modification";
-      
+
       // Third checkpoint
       const cp3 = uow.setCheckpoint();
-      
+
       user!.username = "third_modification";
 
       // Rollback to second checkpoint
@@ -428,37 +428,37 @@ describe("Checkpoint and Rollback System", () => {
 
     it("should handle partial rollback with saves", async () => {
       const user = await uow.users.find({ id: 1 });
-      
+
       // Make first change
       user!.username = "first_change";
       const cp1 = uow.setCheckpoint();
-      
+
       // Make second change
       user!.username = "second_change";
       const cp2 = uow.setCheckpoint();
-      
+
       // Make third change
       user!.username = "third_change";
-      
+
       // Save up to cp1
       await uow.save(cp1);
-      
+
       // Verify database has first change
       let dbUser = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, 1),
       });
       expect(dbUser?.username).toBe("first_change");
-      
+
       // In-memory state should still have third change
       expect(user!.username).toBe("third_change");
-      
+
       // Rollback to cp2
       uow.rollback(cp2);
       expect(user!.username).toBe("second_change");
-      
+
       // Save everything
       await uow.save();
-      
+
       // Verify database has second change
       dbUser = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, 1),
@@ -481,23 +481,23 @@ describe("Checkpoint and Rollback System", () => {
 
     it("should handle checkpoint after rollback", async () => {
       const user = await uow.users.find({ id: 1 });
-      
+
       const cp1 = uow.setCheckpoint();
       user!.username = "modified";
-      
+
       const cp2 = uow.setCheckpoint();
       user!.email = "modified@example.com";
-      
+
       // Rollback to cp1
       uow.rollback(cp1);
-      
+
       // Create new checkpoint after rollback
       const cp3 = uow.setCheckpoint();
-      
+
       // After rollback, stats should reflect the state
       const stats = uow.getStats();
       expect(stats.checkpointCount).toBeGreaterThanOrEqual(2); // At least cp1 and cp3
-      
+
       // User should be in cp1 state (rollback restores to checkpoint state)
       expect(user!.username).toBe("alice"); // Rollback to cp1 restores original
       expect(user!.email).toBe("alice@example.com"); // Original email
@@ -506,16 +506,16 @@ describe("Checkpoint and Rollback System", () => {
     it("should handle entity state after failed save", async () => {
       const user = await uow.users.find({ id: 1 });
       const checkpoint = uow.setCheckpoint();
-      
+
       // Make invalid modification that would fail on save
       user!.username = ""; // Empty username should fail NOT NULL constraint
-      
+
       try {
         await uow.save();
       } catch (error) {
         // Save failed, rollback to checkpoint
         uow.rollback(checkpoint);
-        
+
         // Entity should be restored
         expect(user!.username).toBe("alice");
       }
@@ -524,24 +524,24 @@ describe("Checkpoint and Rollback System", () => {
     it("should handle concurrent modifications with checkpoints", async () => {
       const user1 = await uow.users.find({ id: 1 });
       const user2 = await uow.users.find({ id: 2 });
-      
+
       // Checkpoint 1
       const cp1 = uow.setCheckpoint();
-      
+
       // Concurrent modifications
       user1!.username = "user1_modified";
       user2!.username = "user2_modified";
-      
+
       // Checkpoint 2
       const cp2 = uow.setCheckpoint();
-      
+
       // More modifications
       user1!.email = "user1_new@example.com";
       user2!.email = "user2_new@example.com";
-      
+
       // Rollback to cp1 should restore both users
       uow.rollback(cp1);
-      
+
       expect(user1!.username).toBe("alice");
       expect(user2!.username).toBe("bob");
       expect(user1!.email).toBe("alice@example.com");
@@ -560,12 +560,12 @@ describe("Checkpoint and Rollback System", () => {
       // Check stats to verify checkpoint management
       const stats = uow.getStats();
       expect(stats.checkpointCount).toBeLessThanOrEqual(50);
-      
+
       // Recent checkpoints should still be valid for rollback
       const lastCheckpoint = checkpoints[checkpoints.length - 1];
       const result = uow.rollback(lastCheckpoint);
       expect(result.error).toBeNull();
-      
+
       // Very old checkpoints might be pruned
       const firstCheckpoint = checkpoints[0];
       const oldResult = uow.rollback(firstCheckpoint);
@@ -576,18 +576,18 @@ describe("Checkpoint and Rollback System", () => {
       // Initial stats
       let stats = uow.getStats();
       const initialEntities = stats.trackedEntities;
-      
+
       // Load entities and create checkpoints
       const users = await uow.users.find({ id: [1, 2, 3] });
       await uow.posts.find({ id: [1, 2, 3] });
-      
+
       const cp1 = uow.setCheckpoint();
-      
+
       // Modify entities
-      users.forEach(u => u.username = `modified_${u.username}`);
-      
+      users.forEach((u) => (u.username = `modified_${u.username}`));
+
       const cp2 = uow.setCheckpoint();
-      
+
       // Check updated stats
       stats = uow.getStats();
       expect(stats.trackedEntities).toBe(initialEntities + 6); // 3 users + 3 posts
@@ -601,14 +601,14 @@ describe("Checkpoint and Rollback System", () => {
       uow.setCheckpoint();
       uow.setCheckpoint();
       uow.setCheckpoint();
-      
+
       let stats = uow.getStats();
       expect(stats.checkpointCount).toBeGreaterThanOrEqual(3);
       expect(stats.trackedEntities).toBeGreaterThan(0);
-      
+
       // Clear all
       uow.clear();
-      
+
       stats = uow.getStats();
       expect(stats.checkpointCount).toBe(0);
       expect(stats.trackedEntities).toBe(0);
@@ -619,19 +619,19 @@ describe("Checkpoint and Rollback System", () => {
   describe("Integration with Transaction Management", () => {
     it("should handle checkpoint save with transaction rollback", async () => {
       const user = await uow.users.find({ id: 1 });
-      
+
       user!.username = "before_checkpoint";
       const checkpoint = uow.setCheckpoint();
-      
+
       user!.username = "after_checkpoint";
-      
+
       // Simulate transaction failure by making invalid change
       // Try to create a user with empty username (violates NOT NULL)
       const invalidUser = uow.users.create({
         id: 999,
         username: "", // Empty username should violate constraint
       });
-      
+
       try {
         await uow.save();
       } catch (error) {
@@ -647,67 +647,67 @@ describe("Checkpoint and Rollback System", () => {
       const user1 = await uow.users.find({ id: 1 });
       const user2 = await uow.users.find({ id: 2 });
       const post1 = await uow.posts.find({ id: 1 });
-      
+
       // Initial modifications
       user1!.age = 50;
       post1!.published = false;
-      
+
       const cp1 = uow.setCheckpoint();
-      
+
       // Create new entities
       const newUser = uow.users.create({
         id: 300,
         username: "newuser",
         email: "new@example.com",
       });
-      
+
       const newPost = uow.posts.create({
         id: 300,
         title: "New Post",
         authorId: 300,
       });
-      
+
       // Modify existing
       user2!.username = "bob_modified";
-      
+
       const cp2 = uow.setCheckpoint();
-      
+
       // Delete operations
       uow.users.delete(user1!);
       uow.posts.delete(post1!);
-      
+
       // Save up to cp1 (should save initial modifications only)
       await uow.save(cp1);
-      
+
       // Verify database state
       const dbUser1 = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, 1),
       });
       expect(dbUser1?.age).toBe(50);
-      
+
       const dbPost1 = await db.query.posts.findFirst({
         where: (posts, { eq }) => eq(posts.id, 1),
       });
       expect(dbPost1?.published).toBe(false);
-      
+
       // New entities should not be in database
       const dbNewUser = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, 300),
       });
       expect(dbNewUser).toBeUndefined();
-      
+
       // Rollback to cp2 (before deletes)
       uow.rollback(cp2);
-      
+
       // Save everything
       await uow.save();
-      
+
       // Verify final state
       const finalUser1 = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, 1),
       });
       expect(finalUser1).toBeDefined(); // Not deleted
-      
+
       const finalNewUser = await db.query.users.findFirst({
         where: (users, { eq }) => eq(users.id, 300),
       });

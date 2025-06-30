@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import { createUow, type CreateUowReturnType } from "../src/bun-sqlite";
+import { drizzow, type CreateUowReturnType } from "../src/bun-sqlite";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 // Define test schema
@@ -58,7 +58,7 @@ describe("CRUD Interactions", () => {
     ]);
 
     // Create UoW instance
-    uow = createUow(db);
+    uow = drizzow(db);
   });
 
   describe("Create -> Find Interactions", () => {
@@ -89,7 +89,7 @@ describe("CRUD Interactions", () => {
       await uow.save();
 
       // Clear UoW and create new one to test database persistence
-      const newUow = createUow(db);
+      const newUow = drizzow(db);
       const foundUser = await newUow.users.find({ id: 101 });
 
       expect(foundUser).toBeDefined();
@@ -182,7 +182,7 @@ describe("CRUD Interactions", () => {
       await uow.save();
 
       // Create new UoW to test database state
-      const newUow = createUow(db);
+      const newUow = drizzow(db);
       const notFoundInDb = await newUow.users.find({ id: 3 });
       expect(notFoundInDb).toBeUndefined();
     });
@@ -229,7 +229,7 @@ describe("CRUD Interactions", () => {
       expect(dbUser).toBeDefined();
 
       // Create new UoW and reload entity to delete it
-      const uow2 = createUow(db);
+      const uow2 = drizzow(db);
       const reloadedUser = await uow2.users.find({ id: 201 });
       expect(reloadedUser).toBeDefined();
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import { createUow, type CreateUowReturnType } from "../src/bun-sqlite";
+import { drizzow, type CreateUowReturnType } from "../src/bun-sqlite";
 import { integer, sqliteTable, text, real } from "drizzle-orm/sqlite-core";
 
 // Define test schema with more complex relationships
@@ -89,7 +89,7 @@ describe("Advanced Checkpoint Scenarios", () => {
     ]);
 
     // Create UoW instance
-    uow = createUow(db);
+    uow = drizzow(db);
   });
 
   describe("Business Transaction Scenarios", () => {

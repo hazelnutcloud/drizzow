@@ -3,7 +3,7 @@ import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 import { sqliteTable, text, real } from "drizzle-orm/sqlite-core";
 import { eq, sql } from "drizzle-orm";
-import { createUow } from "../src/bun-sqlite";
+import { drizzow } from "../src/bun-sqlite";
 
 // Define schema for accounts
 const accounts = sqliteTable("accounts", {
@@ -60,7 +60,7 @@ async function uowIndexing(
   db: BunSQLiteDatabase<{ accounts: typeof accounts }>,
   events: TransferEvent[],
 ) {
-  const uow = createUow(db);
+  const uow = drizzow(db);
 
   for (const event of events) {
     // Handle sender (from)

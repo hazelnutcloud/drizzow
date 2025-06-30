@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
-import { createUow, type CreateUowReturnType } from "../src/bun-sqlite";
+import { drizzow, type CreateUowReturnType } from "../src/bun-sqlite";
 import { eq } from "drizzle-orm";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
@@ -50,7 +50,7 @@ describe("Create and Delete Operations", () => {
     `);
 
     // Initialize UoW
-    uow = createUow(db);
+    uow = drizzow(db);
   });
 
   describe("Create Operations", () => {
