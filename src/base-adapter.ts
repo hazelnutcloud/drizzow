@@ -39,7 +39,6 @@ export abstract class BaseDatabaseAdapter implements DatabaseAdapter {
   abstract executeDelete(table: Table, id: any): Promise<void>;
   abstract commitTransaction(tx: any): Promise<void>;
   abstract rollbackTransaction(tx: any): Promise<void>;
-  abstract insertNewEntity(table: Table, data: any): Promise<any>;
 
   /**
    * Execute all changes in a transaction

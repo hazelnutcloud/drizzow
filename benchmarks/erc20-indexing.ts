@@ -2,7 +2,7 @@ import { run, bench, summary, boxplot } from "mitata";
 import { BunSQLiteDatabase, drizzle } from "drizzle-orm/bun-sqlite";
 import { Database } from "bun:sqlite";
 import { sqliteTable, text, real } from "drizzle-orm/sqlite-core";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { drizzow } from "../src/bun-sqlite";
 
 // Define schema for accounts
